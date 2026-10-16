@@ -1,4 +1,5 @@
 from fastapi import APIRouter
+
 from app.modules.meta.router import router as meta_router
 
 api_router = APIRouter()
