@@ -1,56 +1,49 @@
-# API Intelligence Platform — Frontend Foundation
+# API Intelligence Platform — Stage 2 Scaffold
 
-Stage 1 frontend scaffold using React, Vite, TypeScript, React Router, Tailwind CSS, TanStack Query, and Lucide icons.
+This package carries forward the Stage 1 frontend and adds the initial FastAPI, PostgreSQL, Alembic, Docker Compose, and GitHub Actions foundation. It is not yet a working API testing engine.
 
-## Requirements
-- Node.js 20.19+ or 22.12+
-- npm 10+ (or a compatible package manager)
+## Full stack (Windows PowerShell)
+1. Copy `.env.example` to `.env` and set a local PostgreSQL password.
+2. Ensure Docker Desktop is running.
+3. Run `docker compose up --build`.
+4. Open frontend `http://localhost:5173`, API docs `http://localhost:8000/docs`, liveness `http://localhost:8000/health/live`, readiness `http://localhost:8000/health/ready`.
 
-## Run on Windows PowerShell
-
+## Backend direct on Windows
 ```powershell
-# 1. Extract this archive, then enter the project folder
-cd api-intelligence-platform
-
-# 2. Install dependencies
-npm install
-
-# 3. Start the Vite development server
-npm run dev
+cd apps/api
+py -3.12 -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+Copy-Item .env.example .env
+# Start PostgreSQL first and set DATABASE_URL in apps/api/.env
+alembic upgrade head
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-Open the URL printed by Vite (normally http://127.0.0.1:5173).
-
-## Validation
-
+## Frontend checks
 ```powershell
-npm run typecheck
-npm run lint
-npm run build
+npm install --prefix apps/web
+npm run typecheck --prefix apps/web
+npm run lint --prefix apps/web
+npm run build --prefix apps/web
 ```
 
-## What is implemented
-- Responsive application shell and sidebar navigation.
-- Six primary destinations: Overview, API Workspace, Health Checks, API Explorer, Test Campaigns, Findings & Evidence.
-- Collections, Environments, Request History, and Settings supporting routes.
-- Reusable buttons, panels, status pills, metrics, page headers, tables, tabs, and empty/loading states.
-- Explicit local demo data and mock services; no API calls are sent to external systems.
-- Request workspace interactions are local UI state only. The Send button deliberately does not execute HTTP requests until the backend execution service is implemented.
-- TanStack Query is configured at the app root for subsequent server-state integration.
+## Backend checks (with the venv activated)
+```powershell
+cd apps/api
+ruff check .
+mypy app
+pytest
+```
 
-## Architecture notes
-- `src/app`: routing and application providers.
-- `src/components`: shared shell and reusable UI.
-- `src/features`: page-level feature modules.
-- `src/lib`: API client and mock service boundaries.
-- `src/styles`: design tokens and global styles.
+## Implemented now
+- `GET /health/live`: process liveness, independent of database.
+- `GET /health/ready`: database connectivity check.
+- `GET /api/v1/meta`: API metadata.
+- Centralized settings, logging, SQLAlchemy engine/session, Alembic baseline, module responsibility notes, Docker Compose and CI workflow.
 
-## Important
-This is a frontend foundation, not a completed API tester. All data currently shown is demo data. Do not treat demo health status or findings as observations about real target APIs.
+## Not implemented yet
+Google sign-in, application sessions, domain tables, target HTTP execution/SSRF safeguards, OpenAPI import persistence, campaign worker, test generation, analysis, adaptive selection, findings persistence and reports. Do not represent these as implemented.
 
-The existing project decision documents should be placed in `docs/` before implementation expands:
-- `SOURCE_OF_TRUTH.md`
-- `TECHNICAL_DESIGN.md`
-- `API_CONTRACT.md`
-- `DATABASE_DESIGN.md`
-- `DEVELOPMENT_WORKFLOW.md`
+See `docs/` for the five approved design documents.
