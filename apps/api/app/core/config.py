@@ -12,7 +12,9 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_v1_prefix: str = "/api/v1"
     log_level: str = "INFO"
-    database_url: SecretStr = SecretStr("postgresql+psycopg://api_app:replace-this-local-password@localhost:5432/api_intelligence")
+    database_url: SecretStr = SecretStr(
+        "postgresql+psycopg://api_app:replace-this-local-password@localhost:5432/api_intelligence"
+    )
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"]
     )
