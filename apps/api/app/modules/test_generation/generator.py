@@ -5,6 +5,7 @@ import json
 from typing import Any
 
 from app.modules.api_understanding.models import NormalizedOperation
+from app.modules.test_generation.deduplication import deduplicate_candidates
 from app.modules.test_generation.models import CandidateCategory, TestCandidate
 
 
@@ -171,7 +172,4 @@ def generate_candidates(
                 )
             )
 
-    unique: dict[str, TestCandidate] = {
-        candidate.candidate_id: candidate for candidate in candidates
-    }
-    return tuple(unique[key] for key in sorted(unique))
+    return deduplicate_candidates(candidates)

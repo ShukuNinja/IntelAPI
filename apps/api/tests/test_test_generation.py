@@ -1,6 +1,15 @@
+from dataclasses import replace
+
+import pytest
+
+import app.modules.test_generation.generator as generator_module
 from app.modules.api_understanding.normalizer import normalize_operations
 from app.modules.api_understanding.parser import parse_openapi_document
-from app.modules.test_generation import CandidateCategory, generate_candidates
+from app.modules.test_generation import (
+    CandidateCategory,
+    CandidateDeduplicationError,
+    generate_candidates,
+)
 
 SPEC = """
 openapi: 3.1.0
@@ -113,3 +122,20 @@ def test_candidates_are_not_executed_or_persisted() -> None:
     assert candidates
     assert all(candidate.method in {"GET", "POST"} for candidate in candidates)
     assert all(candidate.path == "/users" for candidate in candidates)
+def test_generation_rejects_conflicting_candidate_ids(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_candidate = generator_module._candidate
+
+    def candidate_with_duplicate_id(*args, **kwargs):
+        candidate = original_candidate(*args, **kwargs)
+        return replace(candidate, candidate_id="forced-duplicate-id")
+
+    monkeypatch.setattr(
+        generator_module,
+        "_candidate",
+        candidate_with_duplicate_id,
+    )
+
+    with pytest.raises(CandidateDeduplicationError):
+        _generate()
