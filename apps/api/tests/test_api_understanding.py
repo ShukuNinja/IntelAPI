@@ -9,7 +9,6 @@ from app.modules.api_understanding.errors import (
 from app.modules.api_understanding.normalizer import normalize_operations
 from app.modules.api_understanding.parser import parse_openapi_document
 
-
 VALID_SPEC = """
 openapi: 3.1.0
 info:

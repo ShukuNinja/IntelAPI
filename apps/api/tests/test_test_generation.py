@@ -139,3 +139,46 @@ def test_generation_rejects_conflicting_candidate_ids(
 
     with pytest.raises(CandidateDeduplicationError):
         _generate()
+
+def test_schema_boundary_values_cover_numeric_string_and_array_constraints() -> None:
+    from app.modules.test_generation.generator import _schema_boundary_values
+
+    numeric = _schema_boundary_values(
+        {"type": "integer", "minimum": 1, "maximum": 5}
+    )
+    assert (
+        "minimum",
+        1,
+        CandidateCategory.BOUNDARY,
+        "Tests the declared minimum value.",
+    ) in numeric
+    assert (
+        "below minimum",
+        0,
+        CandidateCategory.NEGATIVE,
+        "Tests a value below the declared minimum.",
+    ) in numeric
+    assert (
+        "maximum",
+        5,
+        CandidateCategory.BOUNDARY,
+        "Tests the declared maximum value.",
+    ) in numeric
+    assert (
+        "above maximum",
+        6,
+        CandidateCategory.NEGATIVE,
+        "Tests a value above the declared maximum.",
+    ) in numeric
+
+    strings = _schema_boundary_values(
+        {"type": "string", "minLength": 2, "maxLength": 4}
+    )
+    assert any(name == "below minimum length" and value == "x" for name, value, _, _ in strings)
+    assert any(name == "above maximum length" and value == "xxxxx" for name, value, _, _ in strings)
+
+    arrays = _schema_boundary_values(
+        {"type": "array", "minItems": 1, "maxItems": 2, "items": {"type": "string"}}
+    )
+    assert any(name == "below minimum items" and value == [] for name, value, _, _ in arrays)
+    assert any(name == "above maximum items" and len(value) == 3 for name, value, _, _ in arrays)
