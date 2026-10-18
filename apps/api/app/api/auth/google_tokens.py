@@ -1,4 +1,5 @@
-from typing import Any
+from collections.abc import Callable
+from typing import Any, cast
 
 from fastapi import HTTPException, status
 from google.auth.exceptions import GoogleAuthError
@@ -23,7 +24,11 @@ def verify_google_id_token(raw_token: str) -> dict[str, Any]:
         )
 
     try:
-        claims = id_token.verify_oauth2_token(
+        verify_token = cast(
+            Callable[..., dict[str, Any]],
+            id_token.verify_oauth2_token,
+        )
+        claims = verify_token(
             raw_token,
             Request(),
             audience=settings.google_client_id,
