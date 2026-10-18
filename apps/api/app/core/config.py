@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env", env_file_encoding="utf-8", extra="ignore", case_sensitive=False
     )
+    nvidia_api_key: SecretStr | None = None
+    nvidia_model: str = "openai/gpt-oss-20b"
     app_name: str = "API Intelligence Platform API"
     app_env: str = "development"
     api_v1_prefix: str = "/api/v1"
