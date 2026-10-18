@@ -1,4 +1,4 @@
-﻿"""Domain models for deterministic, evidence-based API analysis."""
+"""Domain models for deterministic, evidence-based API analysis."""
 
 from dataclasses import dataclass
 from enum import StrEnum
@@ -72,4 +72,3 @@ class ClassificationResult:
     disposition: ClassificationDisposition
     rationale: str
     finding: FindingCandidate | None = None
-

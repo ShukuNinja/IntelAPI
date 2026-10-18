@@ -1,4 +1,4 @@
-﻿"""Deterministic classification of API observations."""
+"""Deterministic classification of API observations."""
 
 import hashlib
 import json
@@ -99,4 +99,3 @@ def classify_observation(
         rationale=rationale,
         finding=finding,
     )
-
