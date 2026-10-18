@@ -1,4 +1,5 @@
-from typing import Any, Callable, cast
+from collections.abc import Callable
+from typing import Any, cast
 
 from fastapi import HTTPException, status
 from google.auth.exceptions import GoogleAuthError
