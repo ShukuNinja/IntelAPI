@@ -194,7 +194,14 @@ def _schema_boundary_values(
     elif schema_type == "string":
         minimum = schema.get("minLength")
         maximum = schema.get("maxLength")
-
+        if (
+            isinstance(minimum, int)
+            and not isinstance(minimum, bool)
+            and isinstance(maximum, int)
+            and not isinstance(maximum, bool)
+            and minimum > maximum
+        ):
+            return []
         if isinstance(minimum, int) and not isinstance(minimum, bool) and 0 <= minimum <= 100:
             results.append((
                 "minimum length",
@@ -228,7 +235,14 @@ def _schema_boundary_values(
         minimum = schema.get("minItems")
         maximum = schema.get("maxItems")
         item = _schema_example(schema.get("items", {}))
-
+        if (
+            isinstance(minimum, int)
+            and not isinstance(minimum, bool)
+            and isinstance(maximum, int)
+            and not isinstance(maximum, bool)
+            and minimum > maximum
+        ):
+            return []
         if isinstance(minimum, int) and not isinstance(minimum, bool) and 0 <= minimum <= 100:
             results.append((
                 "minimum items",
@@ -258,8 +272,9 @@ def _schema_boundary_values(
                 "Tests an array longer than the declared maximum.",
             ))
 
-    elif isinstance(schema.get("enum"), list):
-        for index, value in enumerate(schema["enum"]):
+    enum = schema.get("enum")
+    if isinstance(enum, list):
+        for index, value in enumerate(enum[:100]):
             results.append((
                 f"enum value {index + 1}",
                 value,
@@ -271,20 +286,20 @@ def _schema_boundary_values(
 
 
 
+
 def _schema_candidates(
     operation: NormalizedOperation,
 ) -> list[TestCandidate]:
-    candidates: list[TestCandidate] = []
+    """Generate bounded candidates from request-body schemas."""
     schema = operation.request_body_schema
-
-    if schema is None:
-        return candidates
+    if not isinstance(schema, dict):
+        return []
 
     example = _schema_example(schema)
     if not isinstance(example, dict):
-        return candidates
+        return []
 
-    candidates.append(
+    candidates = [
         _candidate(
             operation,
             CandidateCategory.POSITIVE,
@@ -292,45 +307,112 @@ def _schema_candidates(
             body=example,
             rationale="Builds a conservative request body from the declared schema.",
         )
-    )
+    ]
 
-    required = schema.get("required", [])
-    if isinstance(required, list):
+    max_depth = 5
+    max_candidates = 100
+
+    def walk(
+        current_schema: Any,
+        current_value: Any,
+        path: tuple[str, ...],
+        depth: int,
+    ) -> None:
+        if depth > max_depth or len(candidates) >= max_candidates:
+            return
+        if not isinstance(current_schema, dict) or not isinstance(current_value, dict):
+            return
+
+        required = current_schema.get("required", [])
+        properties = current_schema.get("properties", {})
+
+        if not isinstance(required, list) or not isinstance(properties, dict):
+            return
+
+        # Omit each present required property at this object level.
         for field in required:
-            if field in example:
-                negative_body = dict(example)
-                negative_body.pop(field)
-                candidates.append(
-                    _candidate(
-                        operation,
-                        CandidateCategory.NEGATIVE,
-                        f"Omit required field: {field}",
-                        body=negative_body,
-                        rationale=(
-                            f"Checks handling when required field {field!r} is omitted."
-                        ),
-                    )
-                )
+            if len(candidates) >= max_candidates:
+                return
+            if not isinstance(field, str) or field not in current_value:
+                continue
 
-    properties = schema.get("properties", {})
-    if isinstance(properties, dict):
+            negative_body = _copy_json_object(example)
+            target = negative_body
+
+            for parent in path:
+                child = target.get(parent)
+                if not isinstance(child, dict):
+                    target = {}
+                    break
+                target = child
+
+            if field not in target:
+                continue
+
+            target.pop(field)
+            full_path = ".".join((*path, field))
+            candidates.append(
+                _candidate(
+                    operation,
+                    CandidateCategory.NEGATIVE,
+                    f"Omit required field: {full_path}",
+                    body=negative_body,
+                    rationale=f"Checks handling when required field {full_path!r} is omitted.",
+                )
+            )
+
+        # Generate scalar boundaries and recurse into nested objects.
         for field, field_schema in sorted(properties.items()):
-            for boundary_name, value, category, rationale in (
-                _schema_boundary_values(field_schema)
-            ):
-                boundary_body = dict(example)
-                boundary_body[field] = value
-                candidates.append(
-                    _candidate(
-                        operation,
-                        category,
-                        f"{field}: {boundary_name}",
-                        body=boundary_body,
-                        rationale=rationale,
-                    )
-                )
+            if len(candidates) >= max_candidates:
+                return
+            if not isinstance(field, str):
+                continue
 
+            child_value = current_value.get(field)
+            field_path = (*path, field)
+
+            if isinstance(field_schema, dict):
+                for boundary_name, value, category, rationale in (
+                    _schema_boundary_values(field_schema)
+                ):
+                    if len(candidates) >= max_candidates:
+                        return
+
+                    boundary_body = _copy_json_object(example)
+                    target = boundary_body
+
+                    for parent in path:
+                        child = target.get(parent)
+                        if not isinstance(child, dict):
+                            target = {}
+                            break
+                        target = child
+
+                    target[field] = value
+                    candidates.append(
+                        _candidate(
+                            operation,
+                            category,
+                            f"{'.'.join(field_path)}: {boundary_name}",
+                            body=boundary_body,
+                            rationale=rationale,
+                        )
+                    )
+
+                if isinstance(child_value, dict):
+                    walk(field_schema, child_value, field_path, depth + 1)
+
+    walk(schema, example, (), 0)
     return candidates
+
+
+def _copy_json_object(value: dict[str, Any]) -> dict[str, Any]:
+    """Copy a JSON-compatible object without sharing nested dictionaries."""
+    copied: Any = json.loads(json.dumps(value))
+    if not isinstance(copied, dict):
+        raise TypeError("Expected a JSON object after copying.")
+    return copied
+
 
 
 
