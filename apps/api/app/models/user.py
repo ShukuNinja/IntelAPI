@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, String, func
+from sqlalchemy import DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -27,7 +27,11 @@ class User(Base):
         nullable=True,
     )
     display_name: Mapped[str | None] = mapped_column(
-        String(255),
+        String(200),
+        nullable=True,
+    )
+    avatar_url: Mapped[str | None] = mapped_column(
+        Text,
         nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
