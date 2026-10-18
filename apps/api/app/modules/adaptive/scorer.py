@@ -1,6 +1,7 @@
-﻿"""Explainable scoring and follow-up selection for test candidates."""
+"""Explainable scoring and follow-up selection for test candidates."""
 
 from collections.abc import Mapping, Sequence
+from math import isfinite
 
 from app.modules.adaptive.models import (
     AdaptiveScoringConfig,
@@ -22,9 +23,8 @@ def rank_candidates(
 ) -> tuple[RankedCandidate, ...]:
     """Rank eligible candidates using a deterministic weighted heuristic.
 
-    All candidates must have matching signal records. Ineligible candidates
-    are excluded before scoring. Equal scores are ordered by candidate ID.
-    This function does not execute requests or persist decisions.
+    Equal scores are ordered by candidate ID. This function does not execute
+    requests or persist decisions.
     """
     if limit is not None and limit < 0:
         raise ValueError("limit must be non-negative or None")
@@ -47,9 +47,7 @@ def rank_candidates(
     for candidate in candidates:
         signals = signals_by_candidate.get(candidate.candidate_id)
         if signals is None:
-            raise ValueError(
-                f"Missing scoring signals for candidate {candidate.candidate_id!r}"
-            )
+            raise ValueError(f"Missing scoring signals for candidate {candidate.candidate_id!r}")
         if signals.candidate_id != candidate.candidate_id:
             raise ValueError("Signal candidate ID does not match its mapping key")
         if not signals.eligible:
@@ -72,9 +70,7 @@ def rank_candidates(
                 )
             )
 
-        risk_contribution = (
-            signals.cost_risk_penalty * config.cost_risk_weight
-        )
+        risk_contribution = signals.cost_risk_penalty * config.cost_risk_weight
         score = round(max(0.0, positive_score - risk_contribution), 6)
         component_list.append(
             ScoreComponent(
@@ -84,8 +80,7 @@ def rank_candidates(
                 contribution=-risk_contribution,
             )
         )
-        scored.append((candidate, signals, score, tuple(component_list
-        )))
+        scored.append((candidate, signals, score, tuple(component_list)))
 
     scored.sort(key=lambda item: (-item[2], item[0].candidate_id))
 
@@ -94,15 +89,11 @@ def rank_candidates(
 
     ranked: list[RankedCandidate] = []
     for rank, (candidate, signals, score, components) in enumerate(scored, start=1):
-        component_tuple = tuple(components)
         strongest = sorted(
             (component for component in components if component.contribution > 0),
             key=lambda component: (-component.contribution, component.name),
         )[:2]
-        strongest_text = ", ".join(
-            f"{component.name.replace('_', ' ')}"
-            for component in strongest
-        )
+        strongest_text = ", ".join(component.name.replace("_", " ") for component in strongest)
         rationale = (
             f"Score {score:.3f} under {config.policy_version}; "
             f"highest positive contributors: {strongest_text or 'none'}. "
@@ -114,7 +105,7 @@ def rank_candidates(
                 rank=rank,
                 candidate=candidate,
                 score=score,
-                components=component_tuple,
+                components=tuple(components),
                 evidence_ids=signals.evidence_ids,
                 rationale=rationale,
                 policy_version=config.policy_version,
@@ -130,11 +121,86 @@ def select_next_candidates(
     *,
     limit: int = 1,
     config: AdaptiveScoringConfig = DEFAULT_SCORING_CONFIG,
+    max_cost: float | None = None,
+    candidate_costs: Mapping[str, float] | None = None,
+    diversify: bool = True,
 ) -> tuple[RankedCandidate, ...]:
-    """Return the highest-ranked eligible candidates for the next iteration."""
-    return rank_candidates(
-        candidates,
-        signals_by_candidate,
-        limit=limit,
-        config=config,
-    )
+    """Select candidates within a budget, preferring category and operation diversity.
+
+    Candidates are first ranked by the existing scoring heuristic. When
+    diversification is enabled, selection prefers a category or operation
+    not yet represented in the selected set, when such a candidate fits the
+    remaining budget. Original scores and score components are preserved.
+
+    Candidate costs are explicit caller-provided estimates, not inferred from
+    the cost-risk penalty. Missing costs default to 1.0 when a budget is used.
+    """
+    if limit < 0:
+        raise ValueError("limit must be non-negative")
+    if max_cost is not None and (not isfinite(max_cost) or max_cost < 0):
+        raise ValueError("max_cost must be finite and non-negative or None")
+
+    costs = candidate_costs or {}
+    for candidate_id, cost in costs.items():
+        if not isfinite(cost) or cost < 0:
+            raise ValueError(f"Cost for {candidate_id!r} must be finite and non-negative")
+
+    ranked = rank_candidates(candidates, signals_by_candidate, config=config)
+    if limit == 0:
+        return ()
+
+    remaining = max_cost
+    selected: list[RankedCandidate] = []
+    selected_categories: set[str] = set()
+    selected_operations: set[str] = set()
+    remaining_candidates = list(ranked)
+
+    while remaining_candidates and len(selected) < limit:
+        fitting = [
+            item
+            for item in remaining_candidates
+            if remaining is None or costs.get(item.candidate.candidate_id, 1.0) <= remaining
+        ]
+        if not fitting:
+            break
+
+        if diversify:
+            novel = [
+                item
+                for item in fitting
+                if (
+                    item.candidate.category.value not in selected_categories
+                    or item.candidate.operation_key not in selected_operations
+                )
+            ]
+            pool = novel or fitting
+        else:
+            pool = fitting
+
+        chosen = pool[0]
+        candidate_id = chosen.candidate.candidate_id
+        cost = costs.get(candidate_id, 1.0)
+
+        selected_categories.add(chosen.candidate.category.value)
+        selected_operations.add(chosen.candidate.operation_key)
+        if remaining is not None:
+            remaining -= cost
+
+        selected.append(
+            RankedCandidate(
+                rank=len(selected) + 1,
+                candidate=chosen.candidate,
+                score=chosen.score,
+                components=chosen.components,
+                evidence_ids=chosen.evidence_ids,
+                rationale=(
+                    f"{chosen.rationale} Selection policy: "
+                    f"{'diversity-aware' if diversify else 'score-first'}; "
+                    f"estimated cost {cost:.2f}."
+                ),
+                policy_version=chosen.policy_version,
+            )
+        )
+        remaining_candidates.remove(chosen)
+
+    return tuple(selected)

@@ -1,4 +1,3 @@
-
 """Provider-neutral LLM interface."""
 
 from typing import Protocol

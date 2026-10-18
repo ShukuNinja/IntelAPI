@@ -1,3 +1,4 @@
+
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -11,6 +12,10 @@ class Settings(BaseSettings):
         extra="ignore",
         case_sensitive=False,
     )
+
+    # NVIDIA Build LLM provider.
+    nvidia_api_key: SecretStr | None = None
+    nvidia_model: str = "openai/gpt-oss-20b"
 
     app_name: str = "API Intelligence Platform API"
     app_env: str = "development"

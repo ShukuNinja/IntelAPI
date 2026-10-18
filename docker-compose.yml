@@ -19,6 +19,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-api_intelligence}"
       CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_MODEL: ${NVIDIA_MODEL:-openai/gpt-oss-20b}
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       db: { condition: service_healthy }
@@ -28,6 +30,7 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+
   web:
     build: { context: ./apps/web }
     ports: ["127.0.0.1:5173:5173"]

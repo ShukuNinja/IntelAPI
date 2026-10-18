@@ -1,6 +1,6 @@
+"""LLM integration interfaces and provider construction."""
 
-"""Provider-neutral LLM integration interfaces."""
-
+from app.integrations.llm.factory import create_llm_provider
 from app.integrations.llm.models import LLMRequest, LLMResponse
 from app.integrations.llm.provider import LLMProvider, LLMProviderError
 
@@ -9,4 +9,5 @@ __all__ = [
     "LLMProviderError",
     "LLMRequest",
     "LLMResponse",
+    "create_llm_provider",
 ]

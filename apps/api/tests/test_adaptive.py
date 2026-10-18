@@ -12,11 +12,15 @@ from app.modules.test_generation.models import CandidateCategory
 from app.modules.test_generation.models import TestCandidate as Candidate
 
 
-def make_candidate(candidate_id: str) -> Candidate:
+def make_candidate(
+    candidate_id: str,
+    category: CandidateCategory = CandidateCategory.POSITIVE,
+    operation_key: str = "GET /items",
+) -> Candidate:
     return Candidate(
         candidate_id=candidate_id,
-        operation_key="GET /items",
-        category=CandidateCategory.POSITIVE,
+        operation_key=operation_key,
+        category=category,
         title=f"Test {candidate_id}",
         method="GET",
         path="/items",
@@ -159,4 +163,107 @@ def test_duplicate_candidate_ids_are_rejected():
         rank_candidates(
             [make_candidate("a"), make_candidate("a")],
             {"a": make_signals("a")},
+        )
+
+
+def test_selection_respects_explicit_cost_budget():
+    candidates = [
+        make_candidate("a"),
+        make_candidate("b"),
+        make_candidate("c"),
+    ]
+    signals = {
+        "a": make_signals("a", novelty=1.0),
+        "b": make_signals("b", novelty=0.8),
+        "c": make_signals("c", novelty=0.6),
+    }
+
+    result = select_next_candidates(
+        candidates,
+        signals,
+        limit=3,
+        max_cost=2.0,
+        candidate_costs={"a": 1.5, "b": 1.0, "c": 1.0},
+        diversify=False,
+    )
+
+    assert [item.candidate.candidate_id for item in result] == ["a"]
+    assert (
+        sum({"a": 1.5, "b": 1.0, "c": 1.0}[item.candidate.candidate_id] for item in result) <= 2.0
+    )
+
+
+def test_selection_prefers_a_different_category():
+    candidates = [
+        make_candidate("a"),
+        make_candidate("b", category=CandidateCategory.NEGATIVE),
+        make_candidate("c"),
+    ]
+    signals = {
+        "a": make_signals("a", novelty=1.0),
+        "b": make_signals("b", novelty=0.9),
+        "c": make_signals("c", novelty=0.8),
+    }
+
+    result = select_next_candidates(candidates, signals, limit=2)
+
+    assert [item.candidate.candidate_id for item in result] == ["a", "b"]
+
+
+def test_selection_with_zero_budget_selects_nothing():
+    result = select_next_candidates(
+        [make_candidate("a")],
+        {"a": make_signals("a")},
+        limit=2,
+        max_cost=0.0,
+    )
+
+    assert result == ()
+
+
+def test_negative_cost_budget_is_rejected():
+    with pytest.raises(ValueError, match="max_cost"):
+        select_next_candidates([], {}, max_cost=-1.0)
+
+
+def test_negative_candidate_cost_is_rejected():
+    with pytest.raises(ValueError, match="non-negative"):
+        select_next_candidates(
+            [make_candidate("a")],
+            {"a": make_signals("a")},
+            candidate_costs={"a": -1.0},
+        )
+
+
+def test_selection_is_deterministic_with_diversity_enabled():
+    candidates = [make_candidate("b"), make_candidate("a")]
+    signals = {
+        "a": make_signals("a"),
+        "b": make_signals("b"),
+    }
+
+    first = select_next_candidates(candidates, signals, limit=2)
+    second = select_next_candidates(candidates, signals, limit=2)
+
+    assert first == second
+    assert [item.rank for item in first] == [1, 2]
+
+
+@pytest.mark.parametrize("invalid_cost", [float("nan"), float("inf"), -float("inf")])
+def test_non_finite_candidate_cost_is_rejected(invalid_cost: float):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        select_next_candidates(
+            [make_candidate("a")],
+            {"a": make_signals("a")},
+            candidate_costs={"a": invalid_cost},
+        )
+
+
+@pytest.mark.parametrize("invalid_budget", [float("nan"), float("inf"), -float("inf")])
+def test_non_finite_budget_is_rejected(invalid_budget: float):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        select_next_candidates(
+            [],
+            {},
+            max_cost=invalid_budget,
         )
