@@ -11,6 +11,11 @@ from app.modules.test_generation.orchestration import (
     LLMGenerationStatus,
     generate_candidates_with_llm,
 )
+from app.modules.test_generation.preview import (
+    CandidatePreviewError,
+    CandidatePreviewResult,
+    preview_candidates,
+)
 from app.modules.test_generation.validation import (
     CandidateValidationError,
     validate_candidate,
@@ -27,4 +32,7 @@ __all__ = [
     "CandidateGenerationResult",
     "LLMGenerationStatus",
     "generate_candidates_with_llm",
+    "CandidatePreviewError",
+    "CandidatePreviewResult",
+    "preview_candidates",
 ]
