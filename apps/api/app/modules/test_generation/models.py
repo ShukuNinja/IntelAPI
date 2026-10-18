@@ -16,6 +16,7 @@ class CandidateCategory(StrEnum):
 @dataclass(frozen=True, slots=True)
 class TestCandidate:
     """A proposed API test that has not been executed."""
+    __test__ = False
 
     candidate_id: str
     operation_key: str
