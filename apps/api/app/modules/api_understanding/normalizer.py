@@ -42,6 +42,71 @@ def _dereference_parameter(
         raise OpenAPIValidationError(f"Parameter reference {reference!r} must resolve to an object")
     return resolved
 
+def _parameter_identity(parameter: dict[str, Any]) -> tuple[str, str]:
+    """Return the OpenAPI parameter identity: (name, in)."""
+    name = parameter.get("name")
+    location = parameter.get("in")
+
+    if not isinstance(name, str) or not name:
+        raise OpenAPIValidationError(
+            "Each parameter must define a non-empty 'name'"
+        )
+    if not isinstance(location, str) or not location:
+        raise OpenAPIValidationError(
+            "Each parameter must define a non-empty 'in'"
+        )
+
+    return name, location
+
+
+def _merge_parameters(
+    path_parameters: list[Any],
+    operation_parameters: list[Any],
+    document: dict[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    """Merge path and operation parameters using OpenAPI override rules."""
+    resolved_path = [
+        _dereference_parameter(parameter, document)
+        for parameter in path_parameters
+    ]
+    resolved_operation = [
+        _dereference_parameter(parameter, document)
+        for parameter in operation_parameters
+    ]
+
+    def index_parameters(
+        parameters: list[dict[str, Any]],
+        scope: str,
+    ) -> dict[tuple[str, str], dict[str, Any]]:
+        indexed: dict[tuple[str, str], dict[str, Any]] = {}
+
+        for parameter in parameters:
+            identity = _parameter_identity(parameter)
+
+            if identity in indexed:
+                raise OpenAPIValidationError(
+                    f"Duplicate {scope} parameter: "
+                    f"{identity[0]!r} in {identity[1]!r}"
+                )
+
+            indexed[identity] = parameter
+
+        return indexed
+
+    path_index = index_parameters(resolved_path, "path-level")
+    operation_index = index_parameters(
+        resolved_operation,
+        "operation-level",
+    )
+
+    merged = [
+        parameter
+        for identity, parameter in path_index.items()
+        if identity not in operation_index
+    ]
+    merged.extend(resolved_operation)
+
+    return tuple(merged)
 
 def normalize_operations(
     document: dict[str, Any],
@@ -73,9 +138,10 @@ def normalize_operations(
                 raise OpenAPIValidationError(
                     f"Parameters for {method.upper()} {path} must be a list"
                 )
-            parameters = tuple(
-                _dereference_parameter(item, document)
-                for item in [*path_parameters, *operation_parameters]
+            parameters = _merge_parameters(
+                path_parameters,
+                operation_parameters,
+                document,
             )
 
             request_body = operation.get("requestBody")
@@ -124,10 +190,13 @@ def normalize_operations(
                             response_schemas[f"{status}:{media_type}"] = media["schema"]
 
             security = operation.get("security", document.get("security", []))
-            if not isinstance(security, list) or any(not isinstance(item, dict) for item in security):
+            if not isinstance(security, list) or any(
+                not isinstance(item, dict) for item in security
+            ):
                 raise OpenAPIValidationError(
                     f"Security requirements for {method.upper()} {path} must be a list of objects"
                 )
+
 
             operations.append(
                 NormalizedOperation(

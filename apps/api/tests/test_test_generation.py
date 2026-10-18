@@ -392,3 +392,92 @@ paths:
 
     assert len(schema_candidates) <= 100
     assert len(schema_candidates) == 100
+
+# Regression tests for review findings in deterministic schema generation.
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "integer", "minimum": 10, "maximum": 2},
+        {"type": "number", "minimum": 10, "maximum": 2},
+        {"type": "string", "minLength": 8, "maxLength": 3},
+        {
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 2,
+            "items": {"type": "string"},
+        },
+    ],
+)
+def test_schema_example_rejects_contradictory_bounds(schema: dict) -> None:
+    assert generator_module._schema_example(schema) is None
+
+
+def test_integer_schema_example_respects_fractional_bounds() -> None:
+    assert generator_module._schema_example(
+        {"type": "integer", "minimum": 2.5, "maximum": 4.5}
+    ) == 3
+
+    # There is no integer in the interval [3.5, 3.8].
+    assert generator_module._schema_example(
+        {"type": "integer", "minimum": 3.5, "maximum": 3.8}
+    ) is None
+
+
+def test_schema_boundary_values_skip_contradictory_numeric_bounds() -> None:
+    assert generator_module._schema_boundary_values(
+        {"type": "integer", "minimum": 10, "maximum": 2}
+    ) == []
+
+    assert generator_module._schema_boundary_values(
+        {"type": "number", "minimum": 10, "maximum": 2}
+    ) == []
+
+
+def test_schema_candidates_skip_body_with_contradictory_nested_bounds() -> None:
+    operations = normalize_operations(
+        parse_openapi_document(SPEC)
+    )
+    post_operation = next(
+        operation for operation in operations if operation.method == "POST"
+    )
+    contradictory_operation = replace(
+        post_operation,
+        request_body_schema={
+            "type": "object",
+            "required": ["count"],
+            "properties": {
+                "count": {
+                    "type": "integer",
+                    "minimum": 10,
+                    "maximum": 2,
+                }
+            },
+        },
+    )
+
+    assert generator_module._schema_candidates(contradictory_operation) == []
+
+
+def test_omitted_parameter_candidate_does_not_supply_parameter_value() -> None:
+    candidates = _generate()
+    omission = next(
+        candidate
+        for candidate in candidates
+        if candidate.title == "Omit parameter: limit"
+    )
+
+    assert omission.parameters == {}
+
+
+def test_boolean_schema_does_not_generate_numeric_boundaries() -> None:
+    assert generator_module._schema_boundary_values(
+        {"type": "boolean", "minimum": 0, "maximum": 1}
+    ) == []
+
+def test_union_type_schema_does_not_crash_schema_helpers() -> None:
+    schema = {"type": ["string", "null"]}
+
+    assert generator_module._has_contradictory_bounds(schema) is False
+    assert generator_module._schema_boundary_values(schema) == []

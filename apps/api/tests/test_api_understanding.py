@@ -112,3 +112,58 @@ def test_normalize_operations_deterministically() -> None:
     assert first[0].response_schemas["200:application/json"]["type"] == "array"
     assert first[1].request_body_schema == {"type": "object"}
     assert first[0].source_ref.pointer == "#/paths/~1users/get"
+
+def test_operation_parameter_overrides_path_parameter() -> None:
+    document = {
+        "paths": {
+            "/items": {
+                "parameters": [
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "schema": {
+                            "type": "integer",
+                            "minimum": 1,
+                        },
+                    },
+                    {
+                        "name": "tenant",
+                        "in": "header",
+                        "schema": {
+                            "type": "string",
+                        },
+                    },
+                ],
+                "get": {
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "schema": {
+                                "type": "integer",
+                                "minimum": 5,
+                            },
+                        }
+                    ],
+                    "responses": {
+                        "200": {
+                            "description": "Success",
+                        }
+                    },
+                },
+            }
+        }
+    }
+
+    operations = normalize_operations(document)
+
+    assert len(operations) == 1
+
+    parameters = {
+        (parameter["name"], parameter["in"]): parameter
+        for parameter in operations[0].parameters
+    }
+
+    assert len(operations[0].parameters) == 2
+    assert parameters[("limit", "query")]["schema"]["minimum"] == 5
+    assert ("tenant", "header") in parameters
