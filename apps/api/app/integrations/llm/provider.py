@@ -1,0 +1,18 @@
+
+"""Provider-neutral LLM interface."""
+
+from typing import Protocol
+
+from app.integrations.llm.models import LLMRequest, LLMResponse
+
+
+class LLMProviderError(RuntimeError):
+    """Raised when an LLM provider cannot complete a generation request."""
+
+
+class LLMProvider(Protocol):
+    """Contract implemented by each concrete LLM provider adapter."""
+
+    def generate(self, request: LLMRequest) -> LLMResponse:
+        """Generate text without executing target API requests."""
+        ...
