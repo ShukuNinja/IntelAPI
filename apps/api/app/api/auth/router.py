@@ -1,4 +1,5 @@
 import secrets
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response, status
 from sqlalchemy import select
@@ -21,7 +22,7 @@ router = APIRouter()
 
 
 def _optional_claim(
-    claims: dict,
+    claims: dict[str, Any],
     claim_name: str,
     max_length: int | None = None,
 ) -> str | None:
@@ -35,7 +36,7 @@ def _optional_claim(
 
 def _get_or_create_user(
     db: Session,
-    claims: dict,
+    claims: dict[str, Any],
 ) -> User:
     subject = claims["sub"]
 

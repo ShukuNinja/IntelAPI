@@ -143,7 +143,18 @@ def update_project(
     project = get_owned_project(db, project_id, current_user.id)
 
     if "name" in payload.model_fields_set:
-        project.name = payload.name
+        project_name = payload.name
+
+        if project_name is None:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "code": "VALIDATION_ERROR",
+                    "message": "Project name cannot be null.",
+                },
+            )
+
+        project.name = project_name
 
     if "description" in payload.model_fields_set:
         project.description = payload.description
