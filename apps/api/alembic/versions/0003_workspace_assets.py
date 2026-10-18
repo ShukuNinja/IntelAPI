@@ -4,7 +4,7 @@ Revision ID: 0003_workspace_assets
 Revises: ba3a950852cf
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
