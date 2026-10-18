@@ -64,7 +64,12 @@ def _proposal():
     }
 
 
-def test_without_provider_returns_deterministic_baseline() -> None:
+def test_without_provider_returns_deterministic_baseline(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "app.modules.test_generation.orchestration.create_llm_provider",
+        lambda: None,
+    )
+
     operations = _operations()
 
     result = generate_candidates_with_llm(operations)
@@ -72,6 +77,41 @@ def test_without_provider_returns_deterministic_baseline() -> None:
     assert result.candidates == generate_candidates(operations)
     assert result.llm_status is LLMGenerationStatus.NOT_CONFIGURED
     assert result.llm_error is None
+
+
+def test_uses_configured_provider_when_none_is_injected(monkeypatch) -> None:
+    operations = _operations()
+    provider = FakeProvider("[]")
+
+    monkeypatch.setattr(
+        "app.modules.test_generation.orchestration.create_llm_provider",
+        lambda: provider,
+    )
+
+    result = generate_candidates_with_llm(operations)
+
+    assert result.llm_status is LLMGenerationStatus.SUCCEEDED
+    assert result.candidates == generate_candidates(operations)
+    assert provider.calls == len(operations)
+
+
+def test_provider_factory_failure_returns_deterministic_baseline(monkeypatch) -> None:
+    operations = _operations()
+
+    def fail_factory():
+        raise RuntimeError("Sensitive initialization details")
+
+    monkeypatch.setattr(
+        "app.modules.test_generation.orchestration.create_llm_provider",
+        fail_factory,
+    )
+
+    result = generate_candidates_with_llm(operations)
+
+    assert result.candidates == generate_candidates(operations)
+    assert result.llm_status is LLMGenerationStatus.FAILED
+    assert result.llm_error == "LLM candidate generation failed: RuntimeError"
+    assert "Sensitive initialization details" not in result.llm_error
 
 
 def test_success_merges_and_deduplicates_candidates() -> None:

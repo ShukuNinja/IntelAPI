@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from app.integrations.llm import LLMProvider
+from app.integrations.llm import LLMProvider, create_llm_provider
 from app.modules.api_understanding.models import NormalizedOperation
 from app.modules.test_generation.deduplication import deduplicate_candidates
 from app.modules.test_generation.generator import generate_candidates
@@ -34,12 +34,24 @@ def generate_candidates_with_llm(
 ) -> CandidateGenerationResult:
     """Generate a deterministic baseline and optionally augment it with LLM proposals.
 
-    If any LLM proposal request or validation fails, return only the deterministic
-    baseline and report the failure. This function never executes API requests.
+    An injected provider takes precedence. Otherwise, the configured provider
+    factory is consulted. If no provider is configured, the deterministic
+    baseline is returned. If LLM generation fails, the baseline is preserved.
+
+    This function never executes requests against target APIs.
     """
     baseline = generate_candidates(operations)
 
-    if provider is None:
+    try:
+        configured_provider = provider if provider is not None else create_llm_provider()
+    except Exception as exc:
+        return CandidateGenerationResult(
+            candidates=baseline,
+            llm_status=LLMGenerationStatus.FAILED,
+            llm_error=f"LLM candidate generation failed: {type(exc).__name__}",
+        )
+
+    if configured_provider is None:
         return CandidateGenerationResult(
             candidates=baseline,
             llm_status=LLMGenerationStatus.NOT_CONFIGURED,
@@ -48,7 +60,7 @@ def generate_candidates_with_llm(
     try:
         proposed: list[TestCandidate] = []
         for operation in operations:
-            proposed.extend(generate_llm_candidates(operation, provider))
+            proposed.extend(generate_llm_candidates(operation, configured_provider))
 
         merged = deduplicate_candidates([*baseline, *proposed])
     except Exception as exc:
