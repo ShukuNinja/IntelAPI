@@ -3,12 +3,12 @@
 Revision ID: 0003_workspace_assets
 Revises: ba3a950852cf
 """
-
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0003_workspace_assets"
 down_revision: str | None = "ba3a950852cf"
