@@ -1,4 +1,4 @@
-﻿"""Safe, bounded parsing of OpenAPI JSON and YAML documents."""
+"""Safe, bounded parsing of OpenAPI JSON and YAML documents."""
 
 import json
 from typing import Any

@@ -2,9 +2,9 @@ from fastapi import APIRouter, Depends
 
 from app.api.auth.dependencies import get_current_user
 from app.api.auth.router import router as auth_router
+from app.api.executions.router import router as executions_router
 from app.api.projects.router import router as projects_router
 from app.modules.meta.router import router as meta_router
-from app.api.executions.router import router as executions_router
 
 api_router = APIRouter()
 
@@ -14,9 +14,7 @@ api_router.include_router(
     tags=["auth"],
 )
 
-protected_router = APIRouter(
-    dependencies=[Depends(get_current_user)]
-)
+protected_router = APIRouter(dependencies=[Depends(get_current_user)])
 
 protected_router.include_router(
     meta_router,

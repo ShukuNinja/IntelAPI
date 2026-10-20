@@ -1,4 +1,3 @@
-
 from functools import lru_cache
 
 from pydantic import Field, SecretStr
@@ -23,8 +22,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
 
     database_url: SecretStr = SecretStr(
-        "postgresql+psycopg://api_app:replace-this-local-password"
-        "@localhost:5432/api_intelligence"
+        "postgresql+psycopg://api_app:replace-this-local-password@localhost:5432/api_intelligence"
     )
 
     cors_origins: list[str] = Field(

@@ -64,16 +64,10 @@ def classify_observation(
         return ClassificationResult(
             observation_id=observation.observation_id,
             disposition=ClassificationDisposition.OBSERVATION,
-            rationale=(
-                "Expected and actual values match; no mismatch is supported."
-            ),
+            rationale=("Expected and actual values match; no mismatch is supported."),
         )
 
-    mismatch_kind = (
-        "schema"
-        if observation.kind == ObservationKind.SCHEMA_MISMATCH
-        else "assertion"
-    )
+    mismatch_kind = "schema" if observation.kind == ObservationKind.SCHEMA_MISMATCH else "assertion"
     rationale = (
         f"An explicit {mismatch_kind} mismatch was recorded: "
         f"expected {observation.expected!r}, observed {observation.actual!r}. "

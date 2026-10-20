@@ -3,7 +3,6 @@ from fastapi import APIRouter, HTTPException, status
 from app.api.executions.schemas import ExecutionRequest, ExecutionResponse
 from app.api.executions.service import ExecutionError, execute_request
 
-
 router = APIRouter()
 
 

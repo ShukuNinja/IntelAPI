@@ -79,8 +79,7 @@ class SavedRequest(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "body_type IN "
-            "('none', 'json', 'text', 'form_urlencoded', 'multipart')",
+            "body_type IN ('none', 'json', 'text', 'form_urlencoded', 'multipart')",
             name="ck_saved_requests_body_type",
         ),
         Index(

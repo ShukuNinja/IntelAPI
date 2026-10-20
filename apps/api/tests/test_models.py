@@ -136,9 +136,7 @@ def test_collection_name_must_be_unique_within_project(
 
     with pytest.raises(IntegrityError):
         with db_session.begin_nested():
-            db_session.add(
-                Collection(project_id=project.id, name="Requests")
-            )
+            db_session.add(Collection(project_id=project.id, name="Requests"))
             db_session.flush()
 
 
@@ -152,9 +150,7 @@ def test_environment_name_must_be_unique_within_project(
 
     with pytest.raises(IntegrityError):
         with db_session.begin_nested():
-            db_session.add(
-                Environment(project_id=project.id, name="Development")
-            )
+            db_session.add(Environment(project_id=project.id, name="Development"))
             db_session.flush()
 
 
@@ -247,15 +243,11 @@ def test_deleting_environment_cascades_to_variables(
     db_session.add(variable)
     db_session.flush()
 
-    db_session.execute(
-        delete(Environment).where(Environment.id == environment.id)
-    )
+    db_session.execute(delete(Environment).where(Environment.id == environment.id))
     db_session.flush()
 
     remaining_variable = db_session.scalar(
-        select(EnvironmentVariable.id).where(
-            EnvironmentVariable.id == variable.id
-        )
+        select(EnvironmentVariable.id).where(EnvironmentVariable.id == variable.id)
     )
     assert remaining_variable is None
 
@@ -281,20 +273,14 @@ def test_deleting_collection_unlinks_saved_requests(
     db_session.add(saved_request)
     db_session.flush()
 
-    db_session.execute(
-        delete(Collection).where(Collection.id == collection.id)
-    )
+    db_session.execute(delete(Collection).where(Collection.id == collection.id))
     db_session.flush()
 
     remaining_request_id = db_session.scalar(
-        select(SavedRequest.id).where(
-            SavedRequest.id == saved_request.id
-        )
+        select(SavedRequest.id).where(SavedRequest.id == saved_request.id)
     )
     remaining_collection_id = db_session.scalar(
-        select(SavedRequest.collection_id).where(
-            SavedRequest.id == saved_request.id
-        )
+        select(SavedRequest.collection_id).where(SavedRequest.id == saved_request.id)
     )
 
     assert remaining_request_id == saved_request.id

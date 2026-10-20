@@ -19,10 +19,10 @@ def db_session() -> Generator[Session, None, None]:
     connection = engine.connect()
     transaction = connection.begin()
     session = Session(
-    bind=connection,
-    expire_on_commit=False,
-    join_transaction_mode="create_savepoint",
-)
+        bind=connection,
+        expire_on_commit=False,
+        join_transaction_mode="create_savepoint",
+    )
 
     try:
         yield session
@@ -65,9 +65,7 @@ def test_create_session_stores_only_token_hash(
     assert record.token_hash != raw_token.encode("utf-8")
     assert record.expires_at > datetime.now(UTC)
 
-    stored = db_session.scalar(
-        select(UserSession).where(UserSession.id == record.id)
-    )
+    stored = db_session.scalar(select(UserSession).where(UserSession.id == record.id))
     assert stored is not None
     assert stored.token_hash == sessions._hash_token(raw_token)
 
@@ -99,10 +97,7 @@ def test_missing_token_does_not_resolve_user(
 
 
 def test_unknown_token_does_not_resolve_user(db_session: Session) -> None:
-    assert (
-        sessions.get_user_for_session(db_session, "unknown-session-token")
-        is None
-    )
+    assert sessions.get_user_for_session(db_session, "unknown-session-token") is None
 
 
 def test_expired_session_does_not_resolve_user(

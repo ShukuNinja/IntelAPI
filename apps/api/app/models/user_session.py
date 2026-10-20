@@ -43,6 +43,4 @@ class UserSession(Base):
         nullable=True,
     )
 
-    __table_args__ = (
-        Index("ix_sessions_user_expires", "user_id", "expires_at"),
-    )
+    __table_args__ = (Index("ix_sessions_user_expires", "user_id", "expires_at"),)

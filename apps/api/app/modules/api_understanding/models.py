@@ -1,4 +1,4 @@
-﻿"""Typed domain models for normalized OpenAPI operations."""
+"""Typed domain models for normalized OpenAPI operations."""
 
 from dataclasses import dataclass
 from typing import Any

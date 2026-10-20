@@ -1,4 +1,4 @@
-﻿"""Domain models for deterministic adaptive test selection."""
+"""Domain models for deterministic adaptive test selection."""
 
 from dataclasses import dataclass
 from math import isfinite

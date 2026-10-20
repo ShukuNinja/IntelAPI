@@ -156,6 +156,7 @@ async def custom_swagger_ui() -> HTMLResponse:
         media_type="text/html",
     )
 
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,

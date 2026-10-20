@@ -3,6 +3,7 @@
 Revision ID: 0003_workspace_assets
 Revises: ba3a950852cf
 """
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -240,8 +241,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.CheckConstraint(
-            "body_type IN "
-            "('none', 'json', 'text', 'form_urlencoded', 'multipart')",
+            "body_type IN ('none', 'json', 'text', 'form_urlencoded', 'multipart')",
             name="ck_saved_requests_body_type",
         ),
         sa.ForeignKeyConstraint(

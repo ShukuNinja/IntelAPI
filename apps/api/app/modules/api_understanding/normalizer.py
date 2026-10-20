@@ -1,13 +1,11 @@
-﻿"""Deterministic extraction of operations from parsed OpenAPI documents."""
+"""Deterministic extraction of operations from parsed OpenAPI documents."""
 
 from typing import Any
 
 from app.modules.api_understanding.errors import OpenAPIValidationError
 from app.modules.api_understanding.models import NormalizedOperation, SourceReference
 
-HTTP_METHODS = frozenset(
-    {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
-)
+HTTP_METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
 
 
 def _resolve_local_ref(document: dict[str, Any], reference: str) -> Any:
@@ -29,9 +27,7 @@ def _resolve_local_ref(document: dict[str, Any], reference: str) -> Any:
     return current
 
 
-def _dereference_parameter(
-    parameter: Any, document: dict[str, Any]
-) -> dict[str, Any]:
+def _dereference_parameter(parameter: Any, document: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(parameter, dict):
         raise OpenAPIValidationError("Operation parameters must be objects")
     reference = parameter.get("$ref")
@@ -42,19 +38,16 @@ def _dereference_parameter(
         raise OpenAPIValidationError(f"Parameter reference {reference!r} must resolve to an object")
     return resolved
 
+
 def _parameter_identity(parameter: dict[str, Any]) -> tuple[str, str]:
     """Return the OpenAPI parameter identity: (name, in)."""
     name = parameter.get("name")
     location = parameter.get("in")
 
     if not isinstance(name, str) or not name:
-        raise OpenAPIValidationError(
-            "Each parameter must define a non-empty 'name'"
-        )
+        raise OpenAPIValidationError("Each parameter must define a non-empty 'name'")
     if not isinstance(location, str) or not location:
-        raise OpenAPIValidationError(
-            "Each parameter must define a non-empty 'in'"
-        )
+        raise OpenAPIValidationError("Each parameter must define a non-empty 'in'")
 
     return name, location
 
@@ -65,13 +58,9 @@ def _merge_parameters(
     document: dict[str, Any],
 ) -> tuple[dict[str, Any], ...]:
     """Merge path and operation parameters using OpenAPI override rules."""
-    resolved_path = [
-        _dereference_parameter(parameter, document)
-        for parameter in path_parameters
-    ]
+    resolved_path = [_dereference_parameter(parameter, document) for parameter in path_parameters]
     resolved_operation = [
-        _dereference_parameter(parameter, document)
-        for parameter in operation_parameters
+        _dereference_parameter(parameter, document) for parameter in operation_parameters
     ]
 
     def index_parameters(
@@ -85,8 +74,7 @@ def _merge_parameters(
 
             if identity in indexed:
                 raise OpenAPIValidationError(
-                    f"Duplicate {scope} parameter: "
-                    f"{identity[0]!r} in {identity[1]!r}"
+                    f"Duplicate {scope} parameter: {identity[0]!r} in {identity[1]!r}"
                 )
 
             indexed[identity] = parameter
@@ -100,13 +88,12 @@ def _merge_parameters(
     )
 
     merged = [
-        parameter
-        for identity, parameter in path_index.items()
-        if identity not in operation_index
+        parameter for identity, parameter in path_index.items() if identity not in operation_index
     ]
     merged.extend(resolved_operation)
 
     return tuple(merged)
+
 
 def normalize_operations(
     document: dict[str, Any],
@@ -196,7 +183,6 @@ def normalize_operations(
                 raise OpenAPIValidationError(
                     f"Security requirements for {method.upper()} {path} must be a list of objects"
                 )
-
 
             operations.append(
                 NormalizedOperation(

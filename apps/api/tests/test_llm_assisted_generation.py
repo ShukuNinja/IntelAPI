@@ -72,8 +72,8 @@ def test_generates_valid_candidate_from_fake_provider() -> None:
         "[null]",
         json.dumps([_proposal(extra="unexpected")]),
         json.dumps([_proposal(category="unknown")]),
-        json.dumps([_proposal(parameters=[]) ]),
-        json.dumps([_proposal(body=[]) ]),
+        json.dumps([_proposal(parameters=[])]),
+        json.dumps([_proposal(body=[])]),
         json.dumps([_proposal(title="")]),
     ],
 )
@@ -107,6 +107,8 @@ def test_prompt_contains_operation_context_and_execution_guardrail() -> None:
     assert "GET" in request.user_prompt
     assert "/users" in request.user_prompt
     assert "Do not execute requests" in request.system_prompt
+
+
 def test_rejects_non_finite_json_numbers() -> None:
     provider = FakeProvider(
         '[{"category":"positive","title":"List users",'

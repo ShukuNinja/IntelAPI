@@ -1,4 +1,4 @@
-﻿"""Public interfaces for OpenAPI understanding."""
+"""Public interfaces for OpenAPI understanding."""
 
 from app.modules.api_understanding.models import NormalizedOperation, SourceReference
 from app.modules.api_understanding.normalizer import normalize_operations

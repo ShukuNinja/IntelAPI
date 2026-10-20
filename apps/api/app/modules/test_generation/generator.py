@@ -41,12 +41,10 @@ def _candidate(
         rationale=rationale,
     )
 
+
 def _finite_number(value: Any) -> TypeGuard[int | float]:
-    return (
-        isinstance(value, (int, float))
-        and not isinstance(value, bool)
-        and math.isfinite(value)
-    )
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
 
 def _has_contradictory_bounds(schema: Any) -> bool:
     """Detect contradictory numeric, string-length, or array-size bounds."""
@@ -63,10 +61,7 @@ def _has_contradictory_bounds(schema: Any) -> bool:
             if minimum > maximum:
                 return True
 
-            if (
-                schema_type == "integer"
-                and math.ceil(minimum) > math.floor(maximum)
-            ):
+            if schema_type == "integer" and math.ceil(minimum) > math.floor(maximum):
                 return True
 
     elif schema_type == "string":
@@ -97,8 +92,7 @@ def _has_contradictory_bounds(schema: Any) -> bool:
 
     properties = schema.get("properties", {})
     if isinstance(properties, dict) and any(
-        _has_contradictory_bounds(property_schema)
-        for property_schema in properties.values()
+        _has_contradictory_bounds(property_schema) for property_schema in properties.values()
     ):
         return True
 
@@ -202,7 +196,6 @@ def _schema_example(schema: Any) -> Any:
 
         return value
 
-
     if schema_type == "number":
         minimum = schema.get("minimum")
         maximum = schema.get("maximum")
@@ -211,15 +204,12 @@ def _schema_example(schema: Any) -> Any:
             if minimum > maximum:
                 return None
 
-        number_value = (
-            float(minimum) if _finite_number(minimum) else 1.0
-        )
+        number_value = float(minimum) if _finite_number(minimum) else 1.0
 
         if _finite_number(maximum):
             number_value = min(number_value, float(maximum))
 
         return number_value
-
 
     if schema_type == "boolean":
         return True
@@ -228,6 +218,7 @@ def _schema_example(schema: Any) -> Any:
         return None
 
     return None
+
 
 def _schema_boundary_values(
     schema: Any,
@@ -248,125 +239,135 @@ def _schema_boundary_values(
         step: int | float = 1 if schema_type == "integer" else 1.0
 
         if _finite_number(minimum):
-            results.append((
-                "minimum",
-                minimum,
-                CandidateCategory.BOUNDARY,
-                "Tests the declared minimum value.",
-            ))
-            results.append((
-                "below minimum",
-                minimum - step,
-                CandidateCategory.NEGATIVE,
-                "Tests a value below the declared minimum.",
-            ))
+            results.append(
+                (
+                    "minimum",
+                    minimum,
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared minimum value.",
+                )
+            )
+            results.append(
+                (
+                    "below minimum",
+                    minimum - step,
+                    CandidateCategory.NEGATIVE,
+                    "Tests a value below the declared minimum.",
+                )
+            )
 
         if _finite_number(maximum):
-            results.append((
-                "maximum",
-                maximum,
-                CandidateCategory.BOUNDARY,
-                "Tests the declared maximum value.",
-            ))
-            results.append((
-                "above maximum",
-                maximum + step,
-                CandidateCategory.NEGATIVE,
-                "Tests a value above the declared maximum.",
-            ))
+            results.append(
+                (
+                    "maximum",
+                    maximum,
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared maximum value.",
+                )
+            )
+            results.append(
+                (
+                    "above maximum",
+                    maximum + step,
+                    CandidateCategory.NEGATIVE,
+                    "Tests a value above the declared maximum.",
+                )
+            )
 
     elif schema_type == "string":
         minimum = schema.get("minLength")
         maximum = schema.get("maxLength")
 
-        if (
-            isinstance(minimum, int)
-            and not isinstance(minimum, bool)
-            and 0 <= minimum <= 100
-        ):
-            results.append((
-                "minimum length",
-                "x" * minimum,
-                CandidateCategory.BOUNDARY,
-                "Tests the declared minimum string length.",
-            ))
+        if isinstance(minimum, int) and not isinstance(minimum, bool) and 0 <= minimum <= 100:
+            results.append(
+                (
+                    "minimum length",
+                    "x" * minimum,
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared minimum string length.",
+                )
+            )
             if minimum > 0:
-                results.append((
-                    "below minimum length",
-                    "x" * (minimum - 1),
-                    CandidateCategory.NEGATIVE,
-                    "Tests a string shorter than the declared minimum.",
-                ))
+                results.append(
+                    (
+                        "below minimum length",
+                        "x" * (minimum - 1),
+                        CandidateCategory.NEGATIVE,
+                        "Tests a string shorter than the declared minimum.",
+                    )
+                )
 
-        if (
-            isinstance(maximum, int)
-            and not isinstance(maximum, bool)
-            and 0 <= maximum <= 100
-        ):
-            results.append((
-                "maximum length",
-                "x" * maximum,
-                CandidateCategory.BOUNDARY,
-                "Tests the declared maximum string length.",
-            ))
-            results.append((
-                "above maximum length",
-                "x" * (maximum + 1),
-                CandidateCategory.NEGATIVE,
-                "Tests a string longer than the declared maximum.",
-            ))
+        if isinstance(maximum, int) and not isinstance(maximum, bool) and 0 <= maximum <= 100:
+            results.append(
+                (
+                    "maximum length",
+                    "x" * maximum,
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared maximum string length.",
+                )
+            )
+            results.append(
+                (
+                    "above maximum length",
+                    "x" * (maximum + 1),
+                    CandidateCategory.NEGATIVE,
+                    "Tests a string longer than the declared maximum.",
+                )
+            )
 
     elif schema_type == "array":
         minimum = schema.get("minItems")
         maximum = schema.get("maxItems")
         item = _schema_example(schema.get("items", {}))
 
-        if (
-            isinstance(minimum, int)
-            and not isinstance(minimum, bool)
-            and 0 <= minimum <= 100
-        ):
-            results.append((
-                "minimum items",
-                [item for _ in range(minimum)],
-                CandidateCategory.BOUNDARY,
-                "Tests the declared minimum array length.",
-            ))
+        if isinstance(minimum, int) and not isinstance(minimum, bool) and 0 <= minimum <= 100:
+            results.append(
+                (
+                    "minimum items",
+                    [item for _ in range(minimum)],
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared minimum array length.",
+                )
+            )
             if minimum > 0:
-                results.append((
-                    "below minimum items",
-                    [item for _ in range(minimum - 1)],
-                    CandidateCategory.NEGATIVE,
-                    "Tests an array shorter than the declared minimum.",
-                ))
+                results.append(
+                    (
+                        "below minimum items",
+                        [item for _ in range(minimum - 1)],
+                        CandidateCategory.NEGATIVE,
+                        "Tests an array shorter than the declared minimum.",
+                    )
+                )
 
-        if (
-            isinstance(maximum, int)
-            and not isinstance(maximum, bool)
-            and 0 <= maximum <= 100
-        ):
-            results.append((
-                "maximum items",
-                [item for _ in range(maximum)],
-                CandidateCategory.BOUNDARY,
-                "Tests the declared maximum array length.",
-            ))
-            results.append((
-                "above maximum items",
-                [item for _ in range(maximum + 1)],
-                CandidateCategory.NEGATIVE,
-                "Tests an array longer than the declared maximum.",
-            ))
+        if isinstance(maximum, int) and not isinstance(maximum, bool) and 0 <= maximum <= 100:
+            results.append(
+                (
+                    "maximum items",
+                    [item for _ in range(maximum)],
+                    CandidateCategory.BOUNDARY,
+                    "Tests the declared maximum array length.",
+                )
+            )
+            results.append(
+                (
+                    "above maximum items",
+                    [item for _ in range(maximum + 1)],
+                    CandidateCategory.NEGATIVE,
+                    "Tests an array longer than the declared maximum.",
+                )
+            )
 
     enum = schema.get("enum")
     if isinstance(enum, list):
         for index, value in enumerate(enum[:100]):
-            results.append((
-                f"enum value {index + 1}",
-                value,
-                CandidateCategory.BOUNDARY,
-                "Tests a value explicitly allowed by the declared enum.",
-            ))
+            results.append(
+                (
+                    f"enum value {index + 1}",
+                    value,
+                    CandidateCategory.BOUNDARY,
+                    "Tests a value explicitly allowed by the declared enum.",
+                )
+            )
 
     return results
 
@@ -459,8 +460,8 @@ def _schema_candidates(
             field_path = (*path, field)
 
             if isinstance(field_schema, dict):
-                for boundary_name, value, category, rationale in (
-                    _schema_boundary_values(field_schema)
+                for boundary_name, value, category, rationale in _schema_boundary_values(
+                    field_schema
                 ):
                     if len(candidates) >= max_candidates:
                         return
@@ -499,8 +500,6 @@ def _copy_json_object(value: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(copied, dict):
         raise TypeError("Expected a JSON object after copying.")
     return copied
-
-
 
 
 def generate_candidates(

@@ -8,7 +8,6 @@ import httpx
 
 from app.api.executions.schemas import ExecutionRequest, ExecutionResponse
 
-
 REQUEST_TIMEOUT_SECONDS = 15.0
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024  # 2 MiB
 
@@ -82,10 +81,7 @@ def _validate_public_destination(url: str) -> None:
         except socket.gaierror as exc:
             raise ExecutionError("The target hostname could not be resolved.") from exc
 
-        addresses = [
-            ipaddress.ip_address(record[4][0])
-            for record in records
-        ]
+        addresses = [ipaddress.ip_address(record[4][0]) for record in records]
 
     if not addresses:
         raise ExecutionError("The target hostname did not resolve to an IP address.")
@@ -94,8 +90,7 @@ def _validate_public_destination(url: str) -> None:
     for address in addresses:
         if not address.is_global:
             raise ExecutionError(
-                "Requests to private, local, or otherwise non-public IP addresses "
-                "are blocked."
+                "Requests to private, local, or otherwise non-public IP addresses are blocked."
             )
 
 
@@ -125,11 +120,11 @@ async def execute_request(
             trust_env=False,
         ) as client:
             async with client.stream(
-            method=request.method,
-            url=target_url,
-            headers=request.headers,
-            params=request.query_params or None,
-            content=request.body,
+                method=request.method,
+                url=target_url,
+                headers=request.headers,
+                params=request.query_params or None,
+                content=request.body,
             ) as response:
                 body_chunks: list[bytes] = []
                 size_bytes = 0
@@ -138,9 +133,7 @@ async def execute_request(
                     size_bytes += len(chunk)
 
                     if size_bytes > MAX_RESPONSE_BYTES:
-                        raise ExecutionError(
-                            "The response exceeded the 2 MiB size limit."
-                        )
+                        raise ExecutionError("The response exceeded the 2 MiB size limit.")
 
                     body_chunks.append(chunk)
 

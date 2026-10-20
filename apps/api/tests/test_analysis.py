@@ -1,4 +1,4 @@
-﻿"""Tests for deterministic observation classification."""
+"""Tests for deterministic observation classification."""
 
 from app.modules.analysis.classifier import classify_observation
 from app.modules.analysis.models import (

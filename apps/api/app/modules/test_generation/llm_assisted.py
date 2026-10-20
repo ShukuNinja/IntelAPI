@@ -24,6 +24,7 @@ MAX_PROPOSALS = 50
 MAX_OUTPUT_TOKENS = 4096
 MAX_JSON_DEPTH = 32
 
+
 class LLMProposalError(ValueError):
     """Raised when an LLM response cannot be used as candidate proposals."""
 
@@ -70,9 +71,11 @@ def _build_request(operation: NormalizedOperation) -> LLMRequest:
         max_output_tokens=MAX_OUTPUT_TOKENS,
     )
 
+
 def _reject_json_constant(value: str) -> None:
     """Reject non-standard JSON constants such as NaN and Infinity."""
     raise LLMProposalError(f"Unsupported JSON constant: {value}.")
+
 
 def _check_json_depth(value: Any, depth: int = 0) -> None:
     """Reject excessively nested JSON structures."""
@@ -86,6 +89,7 @@ def _check_json_depth(value: Any, depth: int = 0) -> None:
     elif isinstance(value, list):
         for child in value:
             _check_json_depth(child, depth + 1)
+
 
 def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
     """Parse a bounded JSON array, rejecting unexpected structures."""
@@ -200,20 +204,13 @@ def generate_llm_candidates(
     except LLMProviderError:
         raise
     except Exception as exc:
-        raise LLMProviderError(
-            "The LLM provider failed unexpectedly."
-        ) from exc
+        raise LLMProviderError("The LLM provider failed unexpectedly.") from exc
 
     if not isinstance(response, LLMResponse):
-        raise LLMProviderError(
-            "The LLM provider returned an invalid response."
-        )
+        raise LLMProviderError("The LLM provider returned an invalid response.")
 
     proposals = _parse_proposals(response.text)
 
-    candidates = tuple(
-        _candidate_from_proposal(operation, proposal)
-        for proposal in proposals
-    )
+    candidates = tuple(_candidate_from_proposal(operation, proposal) for proposal in proposals)
 
     return deduplicate_candidates(candidates)

@@ -49,10 +49,7 @@ def test_parse_yaml_openapi_document() -> None:
 
 
 def test_parse_json_openapi_document() -> None:
-    content = (
-        '{"openapi":"3.0.3","info":{"title":"Example","version":"1"},'
-        '"paths":{}}'
-    )
+    content = '{"openapi":"3.0.3","info":{"title":"Example","version":"1"},"paths":{}}'
     assert parse_openapi_document(content)["openapi"] == "3.0.3"
 
 
@@ -113,6 +110,7 @@ def test_normalize_operations_deterministically() -> None:
     assert first[1].request_body_schema == {"type": "object"}
     assert first[0].source_ref.pointer == "#/paths/~1users/get"
 
+
 def test_operation_parameter_overrides_path_parameter() -> None:
     document = {
         "paths": {
@@ -160,8 +158,7 @@ def test_operation_parameter_overrides_path_parameter() -> None:
     assert len(operations) == 1
 
     parameters = {
-        (parameter["name"], parameter["in"]): parameter
-        for parameter in operations[0].parameters
+        (parameter["name"], parameter["in"]): parameter for parameter in operations[0].parameters
     }
 
     assert len(operations[0].parameters) == 2

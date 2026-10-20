@@ -122,6 +122,8 @@ def test_candidates_are_not_executed_or_persisted() -> None:
     assert candidates
     assert all(candidate.method in {"GET", "POST"} for candidate in candidates)
     assert all(candidate.path == "/users" for candidate in candidates)
+
+
 def test_generation_rejects_conflicting_candidate_ids(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -140,12 +142,11 @@ def test_generation_rejects_conflicting_candidate_ids(
     with pytest.raises(CandidateDeduplicationError):
         _generate()
 
+
 def test_schema_boundary_values_cover_numeric_string_and_array_constraints() -> None:
     from app.modules.test_generation.generator import _schema_boundary_values
 
-    numeric = _schema_boundary_values(
-        {"type": "integer", "minimum": 1, "maximum": 5}
-    )
+    numeric = _schema_boundary_values({"type": "integer", "minimum": 1, "maximum": 5})
     assert (
         "minimum",
         1,
@@ -171,9 +172,7 @@ def test_schema_boundary_values_cover_numeric_string_and_array_constraints() -> 
         "Tests a value above the declared maximum.",
     ) in numeric
 
-    strings = _schema_boundary_values(
-        {"type": "string", "minLength": 2, "maxLength": 4}
-    )
+    strings = _schema_boundary_values({"type": "string", "minLength": 2, "maxLength": 4})
     assert any(name == "below minimum length" and value == "x" for name, value, _, _ in strings)
     assert any(name == "above maximum length" and value == "xxxxx" for name, value, _, _ in strings)
 
@@ -187,58 +186,92 @@ def test_schema_boundary_values_cover_numeric_string_and_array_constraints() -> 
 def test_schema_boundary_values_exclude_boolean_numeric_constraints() -> None:
     from app.modules.test_generation.generator import _schema_boundary_values
 
-    assert _schema_boundary_values({
-        "type": "integer", "minimum": True, "maximum": False,
-    }) == []
-    assert _schema_boundary_values({
-        "type": "string", "minLength": True, "maxLength": False,
-    }) == []
-    assert _schema_boundary_values({
-        "type": "array",
-        "minItems": True,
-        "maxItems": False,
-        "items": {"type": "string"},
-    }) == []
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "integer",
+                "minimum": True,
+                "maximum": False,
+            }
+        )
+        == []
+    )
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "string",
+                "minLength": True,
+                "maxLength": False,
+            }
+        )
+        == []
+    )
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "array",
+                "minItems": True,
+                "maxItems": False,
+                "items": {"type": "string"},
+            }
+        )
+        == []
+    )
 
 
 def test_schema_boundary_values_include_enum_for_typed_schemas() -> None:
     from app.modules.test_generation.generator import _schema_boundary_values
 
-    values = _schema_boundary_values({
-        "type": "string",
-        "enum": ["active", "inactive"],
-    })
+    values = _schema_boundary_values(
+        {
+            "type": "string",
+            "enum": ["active", "inactive"],
+        }
+    )
 
-    assert any(name == "enum value 1" and value == "active"
-               for name, value, _, _ in values)
-    assert any(name == "enum value 2" and value == "inactive"
-               for name, value, _, _ in values)
+    assert any(name == "enum value 1" and value == "active" for name, value, _, _ in values)
+    assert any(name == "enum value 2" and value == "inactive" for name, value, _, _ in values)
 
 
 def test_schema_boundary_values_ignore_contradictory_string_bounds() -> None:
     from app.modules.test_generation.generator import _schema_boundary_values
 
-    assert _schema_boundary_values({
-        "type": "string",
-        "minLength": 8,
-        "maxLength": 3,
-    }) == []
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 3,
+            }
+        )
+        == []
+    )
 
 
 def test_schema_boundary_values_ignore_malformed_constraints() -> None:
     from app.modules.test_generation.generator import _schema_boundary_values
 
-    assert _schema_boundary_values({
-        "type": "string",
-        "minLength": "invalid",
-        "maxLength": None,
-    }) == []
-    assert _schema_boundary_values({
-        "type": "array",
-        "minItems": "invalid",
-        "maxItems": None,
-        "items": {"type": "string"},
-    }) == []
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "string",
+                "minLength": "invalid",
+                "maxLength": None,
+            }
+        )
+        == []
+    )
+    assert (
+        _schema_boundary_values(
+            {
+                "type": "array",
+                "minItems": "invalid",
+                "maxItems": None,
+                "items": {"type": "string"},
+            }
+        )
+        == []
+    )
 
 
 def test_generates_nested_required_field_and_scalar_boundary_candidates() -> None:
@@ -285,9 +318,7 @@ paths:
         if candidate.title == "Omit required field: profile.name"
     ]
     assert len(omit_nested_name) == 1
-    assert omit_nested_name[0].body == {
-        "profile": {"age": 18}
-    }
+    assert omit_nested_name[0].body == {"profile": {"age": 18}}
 
     assert any(
         candidate.title == "profile.name: below minimum length"
@@ -295,10 +326,11 @@ paths:
         for candidate in candidates
     )
     assert any(
-    candidate.title == "profile.age: below minimum"
-    and candidate.body == {"profile": {"name": "examp", "age": 17}}
-    for candidate in candidates
+        candidate.title == "profile.age: below minimum"
+        and candidate.body == {"profile": {"name": "examp", "age": 17}}
+        for candidate in candidates
     )
+
 
 def test_nested_candidate_bodies_are_independent() -> None:
     nested_spec = """
@@ -337,9 +369,7 @@ paths:
     candidates = generate_candidates(operations)
 
     positive = next(
-        candidate
-        for candidate in candidates
-        if candidate.category is CandidateCategory.POSITIVE
+        candidate for candidate in candidates if candidate.category is CandidateCategory.POSITIVE
     )
     omission = next(
         candidate
@@ -347,9 +377,7 @@ paths:
         if candidate.title == "Omit required field: profile.name"
     )
 
-    original_omission_body = {
-        "profile": {"age": 18}
-    }
+    original_omission_body = {"profile": {"age": 18}}
 
     positive.body["profile"]["name"] = "mutated"
 
@@ -393,6 +421,7 @@ paths:
     assert len(schema_candidates) <= 100
     assert len(schema_candidates) == 100
 
+
 # Regression tests for review findings in deterministic schema generation.
 
 
@@ -415,33 +444,32 @@ def test_schema_example_rejects_contradictory_bounds(schema: dict) -> None:
 
 
 def test_integer_schema_example_respects_fractional_bounds() -> None:
-    assert generator_module._schema_example(
-        {"type": "integer", "minimum": 2.5, "maximum": 4.5}
-    ) == 3
+    assert (
+        generator_module._schema_example({"type": "integer", "minimum": 2.5, "maximum": 4.5}) == 3
+    )
 
     # There is no integer in the interval [3.5, 3.8].
-    assert generator_module._schema_example(
-        {"type": "integer", "minimum": 3.5, "maximum": 3.8}
-    ) is None
+    assert (
+        generator_module._schema_example({"type": "integer", "minimum": 3.5, "maximum": 3.8})
+        is None
+    )
 
 
 def test_schema_boundary_values_skip_contradictory_numeric_bounds() -> None:
-    assert generator_module._schema_boundary_values(
-        {"type": "integer", "minimum": 10, "maximum": 2}
-    ) == []
+    assert (
+        generator_module._schema_boundary_values({"type": "integer", "minimum": 10, "maximum": 2})
+        == []
+    )
 
-    assert generator_module._schema_boundary_values(
-        {"type": "number", "minimum": 10, "maximum": 2}
-    ) == []
+    assert (
+        generator_module._schema_boundary_values({"type": "number", "minimum": 10, "maximum": 2})
+        == []
+    )
 
 
 def test_schema_candidates_skip_body_with_contradictory_nested_bounds() -> None:
-    operations = normalize_operations(
-        parse_openapi_document(SPEC)
-    )
-    post_operation = next(
-        operation for operation in operations if operation.method == "POST"
-    )
+    operations = normalize_operations(parse_openapi_document(SPEC))
+    post_operation = next(operation for operation in operations if operation.method == "POST")
     contradictory_operation = replace(
         post_operation,
         request_body_schema={
@@ -463,18 +491,18 @@ def test_schema_candidates_skip_body_with_contradictory_nested_bounds() -> None:
 def test_omitted_parameter_candidate_does_not_supply_parameter_value() -> None:
     candidates = _generate()
     omission = next(
-        candidate
-        for candidate in candidates
-        if candidate.title == "Omit parameter: limit"
+        candidate for candidate in candidates if candidate.title == "Omit parameter: limit"
     )
 
     assert omission.parameters == {}
 
 
 def test_boolean_schema_does_not_generate_numeric_boundaries() -> None:
-    assert generator_module._schema_boundary_values(
-        {"type": "boolean", "minimum": 0, "maximum": 1}
-    ) == []
+    assert (
+        generator_module._schema_boundary_values({"type": "boolean", "minimum": 0, "maximum": 1})
+        == []
+    )
+
 
 def test_union_type_schema_does_not_crash_schema_helpers() -> None:
     schema = {"type": ["string", "null"]}

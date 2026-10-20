@@ -1,4 +1,3 @@
-
 from collections.abc import Generator
 from uuid import uuid4
 

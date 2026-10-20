@@ -1,4 +1,4 @@
-﻿"""Public interfaces for adaptive test selection."""
+"""Public interfaces for adaptive test selection."""
 
 from app.modules.adaptive.models import (
     AdaptiveScoringConfig,

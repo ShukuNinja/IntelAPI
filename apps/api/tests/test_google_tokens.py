@@ -69,9 +69,7 @@ def test_invalid_token_returns_401(
     monkeypatch.setattr(
         google_tokens.id_token,
         "verify_oauth2_token",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            ValueError("invalid token")
-        ),
+        lambda *args, **kwargs: (_ for _ in ()).throw(ValueError("invalid token")),
     )
 
     with pytest.raises(HTTPException) as exc_info:
@@ -88,9 +86,7 @@ def test_google_verification_outage_returns_503(
     monkeypatch.setattr(
         google_tokens.id_token,
         "verify_oauth2_token",
-        lambda *args, **kwargs: (_ for _ in ()).throw(
-            GoogleAuthError("verification unavailable")
-        ),
+        lambda *args, **kwargs: (_ for _ in ()).throw(GoogleAuthError("verification unavailable")),
     )
 
     with pytest.raises(HTTPException) as exc_info:
