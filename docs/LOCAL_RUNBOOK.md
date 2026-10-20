@@ -1,100 +1,104 @@
-# IntelAPI — Local Development Runbook
+﻿# IntelAPI â€” Local Development Runbook
 
-**Audience:** Developer A and Developer B
-**Baseline date:** 2026-10-16
-**Primary OS assumed:** Windows 10/11 with PowerShell and Docker Desktop. Linux/macOS users should translate shell syntax and report any platform-specific difference.
+**Refresh date:** 2026-10-19
+**Primary environment:** Windows 10/11, PowerShell, Docker Desktop, Compose v2.
+**Backend Python target:** Python 3.12 (see `apps/api/pyproject.toml`).
 
-This runbook describes the last verified scaffold. It does not imply the complete product is implemented. If the repository scripts differ from these instructions, inspect the checked-in manifests and update this runbook in a reviewed PR.
+This runbook reflects the current repository layout. It does not imply that the full product workflow is implemented. See `IMPLEMENTATION_STATUS.md` and `M0_BASELINE_AUDIT.md` for the current status and verification boundaries.
 
 ## 1. Prerequisites
 
 - Git
 - Docker Desktop with Linux containers and Compose v2
-- Node.js version compatible with the checked-in `engines` field; the last reported environment used Node `v24.19.0`
-- npm; the last reported environment used pnpm `v12.10.1`, but the verified frontend commands below use npm
-- Python version specified in `apps/api/pyproject.toml` / Dockerfile
+- Node.js 22 for the container/CI-aligned frontend toolchain
+- npm
+- Python 3.12 if running backend checks outside Docker
 - Access to the IntelAPI Git repository
 
-Do not install PostgreSQL separately if the Compose PostgreSQL service is the intended local database.
+Use the Compose PostgreSQL service for local development unless there is an explicit reason to use another database.
 
-## 2. Clone and inspect
+## 2. Refresh and inspect the baseline
 
 ```powershell
-git clone https://github.com/ShukuNinja/IntelAPI.git
-cd IntelAPI
 git switch main
-git pull --ff-only
+git pull --ff-only origin main
 git status --short
+git rev-parse HEAD
+git diff --check
+docker compose config --services
 ```
 
-The canonical path used by Developer A at the last verification was `D:\Pinnacle\api-intelligence-platform-stage1`; your clone path can differ.
-
-Before running commands, inspect the current scripts and service names:
-
-```powershell
-Get-Content .\compose.yaml
-Get-Content .\apps\web\package.json
-Get-Content .\apps\api\pyproject.toml
-```
-
-If the Compose file is named `docker-compose.yml` or another supported filename, use the actual checked-in filename consistently.
+Do not start a milestone from a dirty tree without first identifying and preserving the changes. Do not overwrite a working local `.env` without backing up its local-only values outside the repository.
 
 ## 3. Environment configuration
 
-1. Locate the checked-in `.env.example` files and copy the appropriate example to the local ignored `.env` file expected by Compose.
-2. Fill only required local values. Use a local-only database password and random local encryption/session keys if those settings are introduced.
-3. Do not copy your teammate's `.env`, paste secrets into chat/PRs, or commit `.env`.
-4. Confirm `.gitignore` excludes `.env`, local overrides, test artifacts, and database volumes.
-5. Google sign-in requires a configured Google client ID only after auth implementation is integrated. Ordinary deterministic API workspace and candidate generation must not require an LLM key.
-
-Typical PowerShell pattern (adjust the source filename to the repository's actual example):
+The root `docker-compose.yml` requires `POSTGRES_PASSWORD` in the root `.env` file. Copy the example only if no working local `.env` exists:
 
 ```powershell
 Copy-Item .\.env.example .\.env
 ```
 
-Never overwrite a working `.env` without backing up its local-only values outside the repository.
+Review and replace example values with local-only secrets. Do not commit `.env`, OAuth credentials, provider keys, session/encryption keys, database dumps, or real user data. The API has an `apps/api/.env.example` as well; inspect settings and Compose configuration to determine which values are consumed from the root `.env` versus the API process.
 
-## 4. Start the stack
+`VITE_API_BASE_URL` is a Vite build-time variable. The current Docker web image does not configure it and has no `/api` reverse proxy. The frontend API client therefore defaults to same-origin, which is not yet a working API routing strategy in the current static-web container. This is a known integration gap; do not claim live frontend/API connectivity until a strategy is implemented and tested.
 
-From the repository root:
+## 4. Start and inspect the stack
 
 ```powershell
+docker compose config --services
 docker compose up --build -d
 docker compose ps
 docker compose logs --tail 100 api
+docker compose logs --tail 100 db
 docker compose logs --tail 100 web
 ```
 
-If service names differ, get the exact names from `docker compose config --services`.
+Expected container ports in the current Compose file:
 
-Expected baseline:
-- API available at `http://localhost:8000`
-- Web client available at `http://localhost:5173`
-- PostgreSQL healthy in Compose
+- API: `http://localhost:8000`
+- Web: `http://localhost:5173`
+- PostgreSQL: internal Compose service `db` (not published to the host by default)
 
-Open the web app in a browser at `http://localhost:5173`.
+A healthy container only proves that its health check passes. It does not prove the full product workflow works.
 
-## 5. Verify API and database
+## 5. Verify API and migrations
 
 ```powershell
 Invoke-RestMethod http://localhost:8000/health/live
 Invoke-RestMethod http://localhost:8000/health/ready
 Invoke-RestMethod http://localhost:8000/api/v1/meta
+
+docker compose exec api alembic heads
 docker compose exec api alembic current
+docker compose exec api alembic check
+```
+
+The metadata endpoint currently reports `status: scaffold` and is protected by the authenticated versioned router. If the request returns an authentication error, that is consistent with the current router configuration.
+
+Do not use `Base.metadata.create_all()` to bypass migrations. All schema changes require reviewed Alembic revisions. Test migrations against PostgreSQL, not only SQLite. Do not drop/reset the database as routine troubleshooting.
+
+## 6. Backend quality gates
+
+Run in the API container, which is built from `apps/api`:
+
+```powershell
+docker compose exec api ruff check .
+docker compose exec api mypy app
 docker compose exec api pytest -q
 ```
 
-Last verified scaffold behavior:
-- `/health/live` returned `{"status":"alive"}`.
-- `/health/ready` returned a ready response.
-- `/api/v1/meta` returned `{"status":"scaffold"}`.
-- Alembic showed `0001_initial (head)` and the migration was effectively empty.
-- Backend test suite had 2 passing tests.
+The API image copies source into the image and does not bind-mount host source. After host-side source edits, rebuild/recreate the API container before testing those changes:
 
-These are baseline smoke checks, not acceptance tests for the full product.
+```powershell
+docker compose build api
+docker compose up -d api
+```
 
-## 6. Frontend install and checks
+If a tool is missing from the container, inspect the dev dependency installation and use the repository-supported environment rather than silently skipping the gate.
+
+## 7. Frontend quality gates
+
+Run from the repository root:
 
 ```powershell
 npm ci --prefix apps/web
@@ -103,131 +107,64 @@ npm run lint --prefix apps/web
 npm run build --prefix apps/web
 ```
 
-If the repository uses pnpm workspace commands instead, inspect `package.json` and `pnpm-workspace.yaml`, then use the checked-in scripts. Do not change the package manager or regenerate lockfiles without Developer A's approval.
+The frontend pages currently include demo fixtures. A successful typecheck/lint/build does not prove the UI is connected to real API data.
 
-Known audit note from the baseline: frontend dependencies had 7 audit findings in older Tailwind 3 transitive dependencies. Do not run `npm audit fix --force`; propose a controlled dependency update with visual/build regression checks.
+## 8. Security and data handling
 
-## 7. Useful development commands
+- Do not paste or commit raw `.env` values, access tokens, session cookies, provider keys, Google credentials, database passwords, or private keys.
+- All target API calls and URL-based specification imports must pass through the approved outbound-request boundary once implemented.
+- Do not issue direct target requests from route handlers as a shortcut.
+- Do not execute generated candidates without validation and explicit execution.
+- Inspect `docker compose config` output locally before sharing it; environment interpolation can expose secret values.
+- Do not run `docker compose down -v` unless you intentionally want to destroy the local database volume and have confirmed the data is disposable.
 
-```powershell
-# Current service state
-docker compose ps
-
-# Tail logs
-docker compose logs -f api
-docker compose logs -f web
-docker compose logs -f db
-
-# Restart a service after configuration/code changes
-docker compose restart api
-
-# Rebuild after Dockerfile or dependency changes
-docker compose up --build -d
-
-# Run backend tests
-docker compose exec api pytest -q
-
-# Check migration head/current revision
-docker compose exec api alembic current
-docker compose exec api alembic heads
-```
-
-Use `docker compose config --services` to discover exact service names. A service may be named `postgres` rather than `db`.
-
-## 8. Database and migrations
-
-- All schema changes require Alembic revisions authored/merged by Developer A.
-- Never use `Base.metadata.create_all()` to bypass migrations.
-- Before adding a migration, inspect the revision graph and latest `head`.
-- Do not create two independent migration heads. Coordinate with Developer A before pulling a branch that changes schema.
-- Run migration integration tests against PostgreSQL, not only SQLite, before declaring persistence work complete.
-- Do not drop/reset the database unless you explicitly intend to destroy local data.
-
-For a disposable local database only, stop the stack and remove volumes only after confirming that you do not need the stored data:
-
-```powershell
-docker compose down
-# DESTRUCTIVE: removes local Compose volumes and database contents.
-docker compose down -v
-```
-
-Do not run `down -v` as a routine troubleshooting command.
-
-## 9. Working on your assigned branch
+## 9. Working on a milestone
 
 ```powershell
 git switch main
-git pull --ff-only
-git switch -c feat/your-short-task-name
-git status --short
+git pull --ff-only origin main
+git switch -c feat/short-task-name
 ```
 
-After implementing a scoped task:
+After a scoped change:
 
 ```powershell
-# Run the relevant tests and checks first
 git diff --check
 git status --short
 git diff --stat
-git add <explicit-files>
-git commit -m "feat: describe the scoped change"
-git push -u origin feat/your-short-task-name
 ```
 
-Open a PR. Do not push directly to `main`, force-push shared branches, commit `.env`, or include unrelated lockfile/formatting changes. PR requirements and file permissions are defined in `IMPLEMENTATION_PLAN_AND_OWNERSHIP.md`.
+Run relevant tests and quality checks, commit only intended files, push the feature branch, and open a PR. Do not push feature work directly to `main` or force-push shared branches.
 
 ## 10. Troubleshooting
 
 ### Docker daemon unavailable
-- Start Docker Desktop.
-- Wait until the engine reports ready.
-- Run `docker info` and `docker compose ps`.
-- Do not troubleshoot application code until Docker is healthy.
 
-### Port already in use
-- Inspect the process bound to ports 8000/5173 and the Compose port mappings.
-- Stop the conflicting local process or coordinate a port change; do not silently change committed defaults.
+Start Docker Desktop, wait for the engine to become ready, then run `docker info` and `docker compose ps`. Do not debug application code until Docker is healthy.
 
 ### API container exits
+
 ```powershell
 docker compose ps
 docker compose logs --tail 200 api
 docker compose config
 ```
-Check missing environment variables, import errors, migration state, and dependency installation.
 
-### Database is unhealthy / API cannot connect
+Check missing environment variables, import/dependency errors, migration state, and database connectivity.
+
+### Database unhealthy
+
 ```powershell
 docker compose logs --tail 200 db
 docker compose exec api alembic current
 ```
-Verify the API's database hostname is the Compose service name, not `localhost` from inside the API container. Verify credentials match the local environment.
 
-### Backend tests fail
-- Re-run the failing test alone to isolate the cause.
-- Confirm migrations and environment variables are correct.
-- Do not weaken assertions or replace PostgreSQL integration coverage with mocks just to get a green run.
-- Report the exact command, first meaningful traceback, commit, and environment.
+Inside the API container, the database host must be the Compose service name (`db`), not `localhost`.
 
-### Frontend dependency or lockfile mismatch
-- Use the package manager and lockfile committed by the repo.
-- Do not mix npm and pnpm lockfiles without Developer A approval.
-- Do not use `--force` audit fixes.
+### Browser requests fail
 
-### API works locally but not from the browser
-- Check the API base URL and CORS/origin configuration.
-- Inspect browser network and API logs.
-- For cookie auth, verify credentials mode, cookie attributes, allowed origin, and CSRF configuration.
-- Do not solve auth/CORS issues by allowing all origins with credentials.
+Check the browser Network panel, `VITE_API_BASE_URL`, API logs, CORS origins, and cookie settings. The current static-web container does not proxy `/api`; same-origin fallback is not sufficient without a proxy. Do not solve cookie/CORS problems by allowing all origins with credentials.
 
-## 11. Before asking for help
+## 11. When reporting a failure
 
-Include:
-1. operating system and shell;
-2. `git rev-parse --short HEAD` and `git status --short`;
-3. exact command run;
-4. relevant logs with secrets redacted;
-5. whether Docker and DB are healthy;
-6. whether the failure reproduces on latest `main`.
-
-Never share `.env`, access tokens, Google credentials, database passwords, session cookies, or raw secret values.
+Include the current commit hash, `git status --short`, exact command, relevant sanitized logs, Docker/database health, and whether the failure reproduces on latest `main`. Never include secret values.

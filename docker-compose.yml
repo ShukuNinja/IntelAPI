@@ -18,9 +18,10 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-api_intelligence}"
-      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
+      CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173","http://localhost:8000","http://127.0.0.1:8000"]'
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_MODEL: ${NVIDIA_MODEL:-openai/gpt-oss-20b}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       db: { condition: service_healthy }
@@ -32,7 +33,10 @@ services:
     restart: unless-stopped
 
   web:
-    build: { context: ./apps/web }
+    build:
+      context: ./apps/web
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000}
     ports: ["127.0.0.1:5173:5173"]
     depends_on:
       api: { condition: service_healthy }

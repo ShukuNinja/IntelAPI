@@ -7,7 +7,7 @@ COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
 COPY tests ./tests
-RUN pip install --no-cache-dir ".[dev]" \
+RUN pip --default-timeout=120 --retries=10 install --no-cache-dir ".[dev]" \
     && mkdir -p /app/.pytest_cache \
     && chown -R app:app /app
 

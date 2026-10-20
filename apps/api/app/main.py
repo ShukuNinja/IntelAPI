@@ -1,7 +1,8 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from app.api.router import api_router
 from app.core.config import get_settings
@@ -14,7 +15,7 @@ app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="Backend API for the API Intelligence Platform.",
-    docs_url="/docs" if settings.app_env != "production" else None,
+    docs_url=None,
     redoc_url="/redoc" if settings.app_env != "production" else None,
 )
 
@@ -82,6 +83,78 @@ async def validation_exception_handler(
         },
     )
 
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui() -> HTMLResponse:
+    swagger_response = get_swagger_ui_html(
+        openapi_url=app.openapi_url,
+        title=f"{app.title} - Swagger UI",
+        swagger_ui_parameters={
+            "withCredentials": True,
+            "persistAuthorization": True,
+        },
+    )
+
+    html = swagger_response.body.decode("utf-8")
+
+    csrf_script = """
+    <script>
+    (() => {
+      function readCookie(name) {
+        const prefix = name + "=";
+        const entry = document.cookie
+          .split("; ")
+          .find((cookie) => cookie.startsWith(prefix));
+
+        return entry
+          ? decodeURIComponent(entry.substring(prefix.length))
+          : null;
+      }
+
+      const originalFetch = window.fetch;
+
+      window.fetch = function(input, init = {}) {
+        const url = typeof input === "string" ? input : input.url;
+        const method = (
+          init.method ||
+          (typeof input !== "string" ? input.method : "GET")
+        ).toUpperCase();
+
+        const isApiRequest = url.includes("/api/");
+        const isSafeMethod = ["GET", "HEAD", "OPTIONS"].includes(method);
+
+        if (isApiRequest && !isSafeMethod) {
+          const token = readCookie("csrf_token");
+
+          if (token) {
+            const headers = new Headers(
+              init.headers ||
+              (typeof input !== "string" ? input.headers : undefined)
+            );
+
+            headers.set("X-CSRF-Token", token);
+
+            init = {
+              ...init,
+              headers,
+              credentials: "include",
+            };
+          }
+        }
+
+        return originalFetch.call(this, input, init);
+      };
+    })();
+    </script>
+    """
+
+    html = html.replace("</body>", csrf_script + "</body>")
+
+    return HTMLResponse(
+        content=html,
+        status_code=swagger_response.status_code,
+        media_type="text/html",
+    )
 
 app.add_middleware(
     CORSMiddleware,

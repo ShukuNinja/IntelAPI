@@ -1,3 +1,4 @@
+import { useAuth } from '../auth/AuthContext'
 import { ArrowRight, ArrowUpRight, Clock3, FlaskConical, Plus, Sparkles, TrendingUp } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
@@ -8,9 +9,22 @@ import { MethodBadge } from '../../components/ui/MethodBadge'
 import { campaigns, findings, healthChecks, metrics } from '../../lib/demoData'
 
 export function OverviewPage() {
+  const { user } = useAuth()
+
+const displayName = user?.display_name?.trim() || user?.email || 'User'
+const firstName = displayName.split(/\s+/)[0]
+const greeting = `Good morning, ${firstName}`
   return <>
-    <PageHeader eyebrow="MONDAY, OCTOBER 19, 2026" title="Good morning, Jordan" description="Here's what's happening across your API workspace."
-      actions={<><Button onClick={() => window.location.assign('/workspace')}><Plus size={16} /> New request</Button><Button variant="primary" onClick={() => window.location.assign('/campaigns')}><FlaskConical size={16} /> Create campaign</Button></>} />
+    <PageHeader
+  eyebrow={new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  }).toUpperCase()}
+  title={greeting}
+  description="Here's what's happening across your API workspace."
+    actions={<><Button onClick={() => window.location.assign('/workspace')}><Plus size={16} /> New request</Button><Button variant="primary" onClick={() => window.location.assign('/campaigns')}><FlaskConical size={16} /> Create campaign</Button></>} />
     <div className="notice notice--demo"><span className="notice__icon"><Sparkles size={16} /></span><div><strong>Preview workspace</strong><p>Numbers and endpoint statuses below are illustrative demo data. No real API requests have been executed.</p></div></div>
     <div className="metrics-grid">{metrics.map((metric, i) => <div className="metric-card" key={metric.label}><div className="metric-card__top"><span>{metric.label}</span><span className={`metric-icon metric-icon--${i}`}><TrendingUp size={16} /></span></div><div className="metric-card__value">{metric.value}</div><div className="metric-card__foot"><span className={`metric-change metric-change--${metric.tone ?? 'neutral'}`}>{metric.change}</span><span className="metric-period">workspace total</span></div></div>)}</div>
     <div className="dashboard-grid">

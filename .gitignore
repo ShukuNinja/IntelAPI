@@ -1,12 +1,36 @@
+# Node / frontend build artifacts
 node_modules/
 dist/
-apps/api/.venv/
-apps/api/__pycache__/
-apps/api/.pytest_cache/
-apps/api/.mypy_cache/
-apps/api/.ruff_cache/
-apps/api/.env
+apps/web/.vite/
+
+# Python environments, bytecode, test and tooling caches
+.venv/
+**/.venv/
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.ruff_cache/
+**/.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python build/package artifacts
+*.egg-info/
+**/*.egg-info/
+build/
+
+# Local environment files and secrets
 .env
 .env.*
 !.env.example
+
+# Logs and OS/editor artifacts
 *.log
+.DS_Store
+Thumbs.db
+.vscode/

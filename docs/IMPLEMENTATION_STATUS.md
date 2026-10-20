@@ -1,114 +1,108 @@
-# IntelAPI — Implementation Status
+﻿# IntelAPI â€” Implementation Status
 
-**Status snapshot:** 2026-10-16
+**Audit date:** 2026-10-19
 **Repository:** `https://github.com/ShukuNinja/IntelAPI.git`
-**Canonical local path used for the last verification:** `D:\Pinnacle\api-intelligence-platform-stage1`
-**Last known main commit:** `a4f6902 feat: integrate FastAPI backend and monorepo foundation`
+**Audited snapshot:** `fc87b1012b943e7b946a1ce6889941ae6e74305c` (full archive revision identifier)
+**Audit scope:** tracked source and configuration files supplied in `IntelAPI-main-audit(2).zip`.
 
-This is a point-in-time status report. It must be refreshed after each integrated milestone. It is not an aspirational roadmap.
+This document reports observed implementation status. It is not a target design document and does not imply that an existing module is integrated end to end.
 
-## 1. Status legend
+## 1. Status definitions
 
-- **Verified implemented** — evidence was observed in the repository or command output.
-- **Scaffold/demo** — structure or mock behavior exists, but the production capability is not implemented.
-- **Not implemented** — capability was explicitly absent in the audited snapshot.
-- **Needs re-verification** — current checkout may have changed; run the listed command/tests before relying on the status.
+- **Implemented foundation** â€” source exists; full security, integration, and runtime readiness may still require verification.
+- **Partial / demo** â€” some pieces exist, but a complete real-data workflow is not present.
+- **Gap identified** â€” the required route/service/persistence/workflow was not found in the audited source.
+- **Not independently verified** â€” the evidence needed to make a reliable pass/fail determination was not available in this audit.
 
-## 2. Last verified baseline
+## 2. Snapshot summary
 
-| Area | Status | Evidence / known result |
+| Area | Current status | Evidence / remaining verification |
 |---|---|---|
-| Docker Compose | Verified operational at baseline | API `127.0.0.1:8000`, PostgreSQL healthy, web `127.0.0.1:5173` |
-| API liveness | Verified | `GET /health/live` returned `{"status":"alive"}` |
-| API readiness | Verified | `GET /health/ready` returned ready status |
-| API metadata | Scaffold | `/api/v1/meta` returned `{"status":"scaffold"}` |
-| Alembic | Scaffold only | `alembic current` reported `0001_initial (head)`; migration effectively empty |
-| Backend tests | Verified baseline tests only | `pytest -q`: 2 passed, Starlette deprecation warning |
-| Frontend typecheck/lint/build | Verified at baseline | `npm run typecheck --prefix apps/web`, `lint`, `build` passed |
-| Root npm audit | Verified at baseline | 0 vulnerabilities |
-| Frontend dependency audit | Known issue | 7 vulnerabilities in older Tailwind 3 transitive dependencies; do not run `npm audit fix --force` |
-| Authentication | Not implemented | Google ID token verification and application sessions absent |
-| Real project/resource persistence | Not implemented | Real ORM tables and CRUD/ownership not implemented |
-| Safe outbound execution | Not implemented | No production shared execution service verified |
-| OpenAPI understanding | Not implemented | Parser/import/normalized operations absent |
-| Test generation/analysis | Not implemented | Candidate generation, assertions, classification absent |
-| Durable campaigns | Not implemented | PostgreSQL-backed queue/worker/lease/recovery absent |
-| Findings/evidence/report | Not implemented | Durable evidence and report aggregation absent |
-| Frontend | Scaffold/demo | App shell, routes, shared primitives, six pages, demo fixtures/types/API client foundation exist |
-| CI | Partial | CI exists, but frontend tests, contract drift, PostgreSQL migration integration, and E2E gates were missing in the audit |
+| FastAPI application and health probes | Implemented foundation | `apps/api/app/main.py`; runtime smoke checks still required on the developer's Docker environment. |
+| Google authentication and sessions | Implemented foundation | `apps/api/app/api/auth/`; review cookie, CSRF, expiration, revocation, and OAuth configuration before release. |
+| Projects | Implemented foundation | `apps/api/app/api/projects/router.py`; list/create/read/update/archive handlers exist. Verify ownership and integration tests. |
+| Database and migrations | Implemented foundation | Models and migrations exist through `0003_workspace_assets`; run `alembic heads`, `alembic current`, `alembic check`, and migration tests against PostgreSQL. |
+| Workspace persistence | Partial | Models/migration exist for collections, environments, variables, and saved requests; corresponding CRUD API routes were not found in `app/api/router.py`. |
+| OpenAPI understanding | Implemented module foundation | Parser and normalizer exist; persistence, import endpoints, and frontend integration are not established. |
+| Deterministic generation and validation | Implemented module foundation | Generator, validation, deduplication, adaptive selection, analysis, and knowledge modules exist. Test cross-module integration and schema edge cases. |
+| LLM provider and candidate preview | Implemented module foundation | NVIDIA provider, factory, orchestration, and preview exist; no registered public preview endpoint was found. Verify deterministic fallback and provider-failure behavior. |
+| Outbound HTTP execution | Gap identified | No shared production execution service was found in the audited implementation. This is a security-critical prerequisite to sending target requests. |
+| Execution history | Gap identified | No execution/history route or durable execution model was found. |
+| Health-check management | Gap identified | UI/module placeholders exist, but no corresponding registered API workflow or persistence was found. |
+| Campaigns / worker / jobs | Gap identified | Campaign module directory exists, but no durable campaign workflow, job worker, lease/recovery lifecycle, or registered campaign API was found. |
+| Findings / evidence / reports | Gap identified | Intelligence classification and analysis modules exist, but no durable findings/evidence/report API workflow was found. |
+| Frontend | Partial / demo | React routes/pages and API client exist. `OverviewPage`, `CampaignsPage`, `FindingsPage`, and `HealthChecksPage` import demo fixtures; complete real-data integration is absent. |
+| Frontend API transport | Integration gap | `apiClient.ts` defaults to same-origin `/api/...`; Vite config has no proxy and the web Docker image serves static assets. Docker build does not configure `VITE_API_BASE_URL`. |
+| CI | Present; maintainer-reported pass | `.github/workflows/ci.yml` runs frontend typecheck/lint/build and backend migrations, Ruff, mypy, and pytest against PostgreSQL. The post-merge pass was reported by the maintainer and was not independently queried from GitHub Actions in this audit. |
+| Repository hygiene | Fix required | Archive includes tracked Python bytecode/cache and `*.egg-info` artifacts. Update `.gitignore` and remove already tracked generated artifacts from Git. |
 
-**Important:** this snapshot predates implementation work after the recorded commit. Re-run checks on the current branch before changing any row to complete.
+## 3. Registered HTTP surface in the audited source
 
-## 3. Verified scaffold components
+The API router currently registers these versioned endpoints (the configured API prefix is `/api/v1`):
 
-### Backend
-- FastAPI app and settings/logging/CORS foundation.
-- Versioned API router.
-- Health endpoints.
-- `/api/v1/meta`.
-- SQLAlchemy base/engine/session dependency.
-- Alembic environment and initial empty migration.
-- Two backend tests.
+### Authentication
 
-### Frontend
-- React/Vite application shell and routing.
-- Shared UI primitives.
-- Six primary product pages in scaffold form.
-- Demo fixtures, types, and API-client foundation.
+- `GET /api/v1/auth/google/config`
+- `POST /api/v1/auth/google/session`
+- `GET /api/v1/auth/me`
+- `POST /api/v1/auth/logout`
 
-### Infrastructure
-- Dockerfiles and Compose setup.
-- Environment examples/configuration foundation.
-- GitHub Actions CI foundation.
-- Package/workspace configuration.
+### Projects
 
-## 4. Explicitly missing in the last audit
+- `GET /api/v1/projects`
+- `POST /api/v1/projects`
+- `GET /api/v1/projects/{project_id}`
+- `PATCH /api/v1/projects/{project_id}`
+- `POST /api/v1/projects/{project_id}/archive`
 
-- Google ID-token verification, opaque hashed sessions, logout/current-user/CSRF.
-- Real ORM tables/migrations for product entities.
-- Project CRUD and ownership enforcement.
-- Collections/requests/environments persistence.
-- Encrypted environment secret storage/resolution.
-- Shared outbound HTTP execution service with SSRF protections, DNS/redirect validation, timeout/budget/response caps and redaction.
-- Execution history persistence.
-- OpenAPI file/URL import, parser, normalization, operation extraction, safe URL fetch.
-- Knowledge facts and provenance.
-- Deterministic candidate generation, optional LLM adapter, validation/deduplication.
-- Health-check definitions/runs and assertion evaluation.
-- Findings/evidence persistence, classification, report aggregation and overview endpoint.
-- Durable campaigns, job queue, worker, leases, recovery, cancellation, budgets and append-only events.
-- Frontend auth, project CRUD, real service integration, persisted flows.
-- Frontend tests, PostgreSQL migration integration, type drift check and E2E flows.
+### Metadata and health
 
-## 5. Baseline verification commands
+- `GET /api/v1/meta` (currently reports status `scaffold` and is behind the authenticated protected router)
+- `GET /health/live`
+- `GET /health/ready` (checks database readiness)
 
-Run from repository root in PowerShell:
+No workspace CRUD, specification import, candidate preview, execution/history, health-check management, campaign, finding/evidence, or report endpoint was registered in the audited router.
 
-```powershell
-docker compose ps
-docker compose exec api alembic current
-docker compose exec api pytest -q
-npm ci --prefix apps/web
-npm run typecheck --prefix apps/web
-npm run lint --prefix apps/web
-npm run build --prefix apps/web
-```
+## 4. Database and migration state
 
-If the repo no longer uses these scripts, do not silently change this document based on assumptions. Inspect `package.json`, Compose, and workflow files, then update the commands to match the checked-in configuration.
+The migration chain present in the archive is:
 
-Smoke tests:
+`0001_initial` â†’ `0002_identity_projects` â†’ `ba3a950852cf` â†’ `0003_workspace_assets`
 
-```powershell
-Invoke-RestMethod http://localhost:8000/health/live
-Invoke-RestMethod http://localhost:8000/health/ready
-Invoke-RestMethod http://localhost:8000/api/v1/meta
-```
+Models and migrations cover users, projects, sessions, collections, environments, environment variables, and saved requests. The audit did not connect to the developer's actual PostgreSQL database, so the applied revision, migration drift, and clean-database upgrade status remain **not independently verified**.
 
-## 6. Rules for status updates
+Do not use `Base.metadata.create_all()` to bypass Alembic. Run the database checks in the local runbook before adding a migration.
 
-- Only mark **Verified implemented** after code exists, tests pass, and a user-visible flow or integration test demonstrates it.
-- A router stub, placeholder page, mock fixture, type definition, or proposed migration does not count as a feature.
-- Record exact commands and outcomes, plus the commit hash and date of verification.
-- If a test was not run, label it “not run”; do not infer a pass.
-- If a feature is partially implemented, list the implemented and missing parts explicitly.
-- Developer A publishes the integrated status after merges. Developer B supplies test evidence for intelligence modules.
+## 5. Frontend status
+
+The following product pages exist in the React source: Overview, Workspace, Health Checks, Explorer, Campaigns, Findings, plus supporting layout/UI components. Existence of a page is not proof of backend integration.
+
+The following pages import `demoData.ts`: Overview, Campaigns, Findings, and Health Checks. Replace demo data only as each corresponding backend workflow is implemented and tested. Do not remove the fixtures until replacement workflows exist.
+
+The API client uses `VITE_API_BASE_URL` when provided, otherwise an empty base URL (same origin). In the current Docker setup the web container serves static assets without an API proxy and does not set the Vite build-time variable. This needs an explicit, tested deployment strategy before wiring live requests. Do not treat a successful frontend build as proof that API requests work.
+
+## 6. Verification evidence and limits
+
+- The maintainer reported that the combined feature PR merged to `main` with no CI errors.
+- During the earlier source audit, the focused intelligence test suite reported **148 passed**.
+- A complete independent backend test run was not established in the audit environment because `psycopg` and `google-auth` dependencies were missing there; the repository requires Python 3.12.
+- No live Docker Compose, browser E2E, real Google OAuth, provider API, or production outbound-execution test was performed as part of this source-only audit.
+
+Do not interpret an unrun check as passed or failed.
+
+## 7. M0 exit checklist
+
+- [ ] Refresh local checkout to latest `main` and record `git rev-parse HEAD`.
+- [ ] Confirm `git status --short` is clean before starting work.
+- [ ] Remove tracked `__pycache__`, `*.pyc`/`*.pyo`, and `*.egg-info` artifacts.
+- [ ] Confirm `.gitignore` covers generated Python/Node artifacts and local secrets.
+- [ ] Run `docker compose config --services` and `docker compose config` (inspect output for accidental secret disclosure before sharing).
+- [ ] Start the stack and verify health probes.
+- [ ] Verify Alembic heads/current/check against PostgreSQL.
+- [ ] Run backend Ruff, mypy, and pytest using Python 3.12 / the API container.
+- [ ] Run frontend npm ci, typecheck, lint, and build.
+- [ ] Record exact command outcomes and any environment limitations in `M0_BASELINE_AUDIT.md`.
+
+## 8. Next milestone after M0
+
+Proceed to M1 only after the baseline is reproducible. M1 should connect authentication/projects and implement authorized workspace CRUD for collections, environments, environment variables, and saved requests, including secret-at-rest handling. Secure outbound execution is a separate high-priority milestone and must precede real target-request execution.
