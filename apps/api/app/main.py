@@ -86,8 +86,15 @@ async def validation_exception_handler(
 
 @app.get("/docs", include_in_schema=False)
 async def custom_swagger_ui() -> HTMLResponse:
+    openapi_url = app.openapi_url
+    if openapi_url is None:
+        raise HTTPException(
+            status_code=404,
+            detail="OpenAPI schema is disabled",
+        )
+
     swagger_response = get_swagger_ui_html(
-        openapi_url=app.openapi_url,
+        openapi_url=openapi_url,
         title=f"{app.title} - Swagger UI",
         swagger_ui_parameters={
             "withCredentials": True,
@@ -95,7 +102,11 @@ async def custom_swagger_ui() -> HTMLResponse:
         },
     )
 
-    html = swagger_response.body.decode("utf-8")
+    body = swagger_response.body
+    if isinstance(body, memoryview):
+        body = body.tobytes()
+
+    html = body.decode("utf-8")
 
     csrf_script = """
     <script>
