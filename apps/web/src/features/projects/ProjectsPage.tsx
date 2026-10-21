@@ -9,8 +9,10 @@ import {
   projectService,
   type Project,
 } from './projectService'
+import { useProject } from './ProjectContext'
 
 export function ProjectsPage() {
+  const { refreshProjects } = useProject()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -91,6 +93,7 @@ export function ProjectsPage() {
 
       closeForm()
       await loadProjects()
+      await refreshProjects()
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Unable to save the project.',
@@ -114,6 +117,7 @@ export function ProjectsPage() {
       setProjects((current) =>
         current.filter((item) => item.id !== project.id),
       )
+      await refreshProjects()
     } catch (err) {
       setError(
         err instanceof Error ? err.message : 'Unable to archive the project.',

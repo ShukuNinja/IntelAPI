@@ -21,6 +21,7 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../../features/auth/AuthContext'
+import { ProjectProvider, useProject } from '../../features/projects/ProjectContext'
 
 type NavItem = {
   label: string
@@ -64,8 +65,9 @@ function SidebarLink({ item }: { item: NavItem }) {
   )
 }
 
-export function AppShell() {
+function AppShellContent() {
   const { user, logout } = useAuth()
+  const { projects, project, selectProject, loading: projectsLoading } = useProject()
   const navigate = useNavigate()
   const [logoutError, setLogoutError] = useState<string | null>(null)
 
@@ -101,16 +103,20 @@ export function AppShell() {
           </span>
         </NavLink>
 
-        <button className="project-switcher" type="button">
+        <label className="project-switcher" aria-label="Select project">
           <span className="project-switcher__icon">
             <Command size={16} />
           </span>
           <span className="project-switcher__copy">
-            <strong>Acme Platform</strong>
-            <small>Personal workspace</small>
+            <strong>{project?.name ?? (projectsLoading ? 'Loading projects…' : 'No project selected')}</strong>
+            <small>{project ? 'Active project' : 'Create a project to begin'}</small>
           </span>
           <ChevronDown size={15} />
-        </button>
+          <select aria-label="Active project" value={project?.id ?? ''} onChange={(event) => selectProject(event.target.value)}>
+            {!project && <option value="">Select a project</option>}
+            {projects.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </label>
 
         <div className="nav-section-label">PLATFORM</div>
         <nav className="nav-list">
@@ -188,12 +194,12 @@ export function AppShell() {
           <div className="breadcrumbs">
             <span>Workspace</span>
             <span className="breadcrumbs__slash">/</span>
-            <strong>Acme Platform</strong>
+            <strong>{project?.name ?? 'No project selected'}</strong>
           </div>
 
           <div className="topbar__actions">
             <span className="demo-indicator">
-              <span /> Demo data
+              <span /> {project ? 'Project connected' : 'Select a project'}
             </span>
 
             <div className="topbar__divider" />
@@ -230,4 +236,8 @@ export function AppShell() {
       </div>
     </div>
   )
+}
+
+export function AppShell() {
+  return <ProjectProvider><AppShellContent /></ProjectProvider>
 }

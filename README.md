@@ -10,9 +10,9 @@ The ordinary API-client workflow must remain useful when no LLM provider is conf
 
 ## Project status
 
-The repository contains an integrated backend foundation and intelligence modules, but it is **not yet a complete API-testing product**. Authentication and project endpoints, persistence models/migrations, and intelligence algorithms exist. Workspace CRUD endpoints, the shared secure outbound execution service, durable execution/history, public intelligence workflow endpoints, durable campaigns, evidence/report APIs, and complete frontend-to-backend integration remain to be implemented or verified.
+The `frontend-backend_integration` branch contains the integrated MVP workflows: authenticated project management, persisted API workspace and request history, OpenAPI import and operation exploration, repeatable health checks, durable bounded campaigns, findings/evidence triage, and reports. The frontend uses the versioned API rather than demo fixtures. PostgreSQL schema changes are managed by Alembic.
 
-Read [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for the current evidence-based status and [`docs/M0_BASELINE_AUDIT.md`](docs/M0_BASELINE_AUDIT.md) for the baseline audit and identified gaps.
+The branch has passed the backend suite and frontend typecheck/lint/build checks. An authenticated browser walkthrough verified the main feature pages use the API, and a bounded campaign completed against the approved public httpbin test endpoint. The local API and web services return HTTP 200. See [`docs/COMPLETION_LOG.md`](docs/COMPLETION_LOG.md) for evidence and any environment-specific acceptance limits, [`docs/LOCAL_RUNBOOK.md`](docs/LOCAL_RUNBOOK.md) for current local setup, and [`docs/M0_BASELINE_AUDIT.md`](docs/M0_BASELINE_AUDIT.md) for the historical baseline audit.
 
 ## Canonical documentation
 
@@ -20,7 +20,7 @@ Read [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) for the cu
 - [`docs/api_contracts.md`](docs/api_contracts.md) â€” target HTTP API and shared contracts.
 - [`docs/DATABASE_SCHEMA.md`](docs/DATABASE_SCHEMA.md) â€” target relational schema and migration order.
 - [`docs/IMPLEMENTATION_PLAN_AND_OWNERSHIP.md`](docs/IMPLEMENTATION_PLAN_AND_OWNERSHIP.md) â€” milestones, ownership, and workflow.
-- [`docs/IMPLEMENTATION_STATUS.md`](docs/IMPLEMENTATION_STATUS.md) â€” observed implementation status and verification checklist.
+- [`docs/COMPLETION_LOG.md`](docs/COMPLETION_LOG.md) â€” observed implementation status, verification, and remaining acceptance.
 - [`docs/LOCAL_RUNBOOK.md`](docs/LOCAL_RUNBOOK.md) â€” local setup and verification commands.
 - [`docs/M0_BASELINE_AUDIT.md`](docs/M0_BASELINE_AUDIT.md) â€” audit evidence for the current source snapshot.
 

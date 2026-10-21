@@ -22,6 +22,12 @@ class Execution(Base):
     saved_request_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("saved_requests.id", ondelete="SET NULL"), nullable=True
     )
+    campaign_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True
+    )
+    test_case_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="SET NULL"), nullable=True
+    )
     environment_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("environments.id", ondelete="SET NULL"), nullable=True
     )
@@ -46,4 +52,6 @@ class Execution(Base):
     __table_args__ = (
         Index("ix_executions_project_created", "project_id", created_at.desc()),
         Index("ix_executions_request_created", "saved_request_id", created_at.desc()),
+        Index("ix_executions_campaign_created", "campaign_id", "created_at"),
+        Index("ix_executions_test_case", "test_case_id"),
     )

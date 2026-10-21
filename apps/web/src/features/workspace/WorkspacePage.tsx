@@ -1,4 +1,4 @@
-import { useState, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import {
   ChevronDown,
   Copy,
@@ -14,11 +14,10 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { Panel } from '../../components/ui/Panel'
 import { ApiError } from '../../lib/apiClient'
-import {
-  executionService,
-  type ExecutionResponse,
-  type HttpMethod,
-} from './executionService'
+import { apiRequest } from '../../lib/apiClient'
+import { useProject } from '../projects/ProjectContext'
+import { workspaceService, type ExecutionRecord, type SavedRequest } from './workspaceService'
+import type { HttpMethod } from './executionService'
 
 const sampleBody = JSON.stringify({ page: 1, limit: 20 }, null, 2)
 
@@ -54,6 +53,16 @@ function rowsToRecord(rows: KeyValueRow[]): Record<string, string> {
   }
 
   return result
+}
+
+function persistedBody(method: HttpMethod, rawBody: string, headers: Record<string, string>): { body: unknown | null; body_type: 'none' | 'json' | 'text' } {
+  if (['GET', 'HEAD'].includes(method) || !rawBody.trim()) return { body: null, body_type: 'none' }
+  const isJson = Object.entries(headers).some(([key, value]) => key.toLowerCase() === 'content-type' && value.toLowerCase().includes('application/json'))
+  if (isJson) {
+    try { return { body: JSON.parse(rawBody), body_type: 'json' } }
+    catch { throw new Error('The request body is not valid JSON.') }
+  }
+  return { body: rawBody, body_type: 'text' }
 }
 
 function buildEffectiveUrl(
@@ -118,12 +127,6 @@ function validateDuplicateKeys(
   return null
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
-}
-
 function formatResponseBody(body: string): string {
   try {
     return JSON.stringify(JSON.parse(body), null, 2)
@@ -158,6 +161,7 @@ function buildCurl(
 }
 
 export function WorkspacePage() {
+  const { project } = useProject()
   const [method, setMethod] = useState<HttpMethod>('GET')
   const [url, setUrl] = useState('https://httpbin.org/get')
   const [body, setBody] = useState(sampleBody)
@@ -165,11 +169,35 @@ export function WorkspacePage() {
   const [headers, setHeaders] = useState(initialHeaders)
   const [activeTab, setActiveTab] = useState('Params')
   const [responseTab, setResponseTab] = useState('Pretty')
-  const [response, setResponse] = useState<ExecutionResponse | null>(null)
+  const [response, setResponse] = useState<ExecutionRecord | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
   const [nextRowId, setNextRowId] = useState(4)
+  const [savedRequests, setSavedRequests] = useState<SavedRequest[]>([])
+  const [selectedRequestId, setSelectedRequestId] = useState('')
+  const [requestName, setRequestName] = useState('New request')
+  const [environments, setEnvironments] = useState<Array<{ id: string; name: string }>>([])
+  const [collections, setCollections] = useState<Array<{ id: string; name: string }>>([])
+  const [collectionId, setCollectionId] = useState('')
+  const [environmentId, setEnvironmentId] = useState('')
+  const [loadingSaved, setLoadingSaved] = useState(false)
+
+  useEffect(() => {
+    if (!project) { setSavedRequests([]); setEnvironments([]); setCollections([]); setSelectedRequestId(''); return }
+    setSelectedRequestId('')
+    setLoadingSaved(true)
+    Promise.all([
+      workspaceService.listRequests(project.id),
+      apiRequest<{ items: Array<{ id: string; name: string }> }>(`/v1/projects/${project.id}/environments`),
+      apiRequest<{ items: Array<{ id: string; name: string }> }>(`/v1/projects/${project.id}/collections`),
+    ]).then(([requests, envs, groups]) => {
+      setSavedRequests(requests.items)
+      setEnvironments(envs.items)
+      setCollections(groups.items)
+    }).catch((err: unknown) => setError(err instanceof Error ? err.message : 'Unable to load project requests.'))
+      .finally(() => setLoadingSaved(false))
+  }, [project])
 
   const requestHeaders = rowsToRecord(headers)
   const requestParams = rowsToRecord(params)
@@ -224,7 +252,6 @@ export function WorkspacePage() {
       const headersError = validateDuplicateKeys(headers, 'header', true)
       if (headersError) throw new Error(headersError)
 
-      const effectiveUrl = buildEffectiveUrl(trimmedUrl, requestParams)
       let requestBody: string | null = null
 
       if (!['GET', 'HEAD'].includes(method) && body.trim()) {
@@ -244,15 +271,25 @@ export function WorkspacePage() {
         requestBody = body
       }
 
-      const result = await executionService.execute({
+      if (!project) throw new Error('Create or select a project before executing a saved request.')
+      const bodyData = persistedBody(method, requestBody ?? '', requestHeaders)
+      const input = {
+        name: requestName.trim() || 'Untitled request',
         method,
-        url: effectiveUrl,
+        url_template: trimmedUrl,
+        collection_id: collectionId || null,
+        environment_id: environmentId || null,
         headers: requestHeaders,
-        query_params: {},
-        body: requestBody,
-      })
-
-      setResponse(result)
+        query_params: requestParams,
+        body: bodyData.body,
+        body_type: bodyData.body_type,
+      }
+      let saved = savedRequests.find((item) => item.id === selectedRequestId)
+      if (saved) saved = await workspaceService.updateRequest(saved.id, input)
+      else saved = await workspaceService.saveRequest(project.id, input)
+      setSelectedRequestId(saved.id)
+      setSavedRequests((current) => [saved!, ...current.filter((item) => item.id !== saved!.id)])
+      setResponse(await workspaceService.executeRequest(saved.id, environmentId || null))
     } catch (err) {
       if (err instanceof ApiError) {
         setError(
@@ -270,6 +307,46 @@ export function WorkspacePage() {
     }
   }
 
+  async function saveRequest() {
+    if (!project) { setError('Create or select a project before saving a request.'); return }
+    try {
+      const bodyData = persistedBody(method, body, requestHeaders)
+      const input = {
+        name: requestName.trim() || 'Untitled request', method, url_template: url.trim(),
+        collection_id: collectionId || null, environment_id: environmentId || null,
+        headers: requestHeaders, query_params: requestParams,
+        body: bodyData.body,
+        body_type: bodyData.body_type,
+      }
+      const saved = selectedRequestId ? await workspaceService.updateRequest(selectedRequestId, input) : await workspaceService.saveRequest(project.id, input)
+      setSelectedRequestId(saved.id)
+      setSavedRequests((current) => [saved, ...current.filter((item) => item.id !== saved.id)])
+      setNotice('Request saved to this project.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to save request.') }
+  }
+
+  function openSavedRequest(id: string) {
+    const saved = savedRequests.find((item) => item.id === id)
+    if (!saved) { setSelectedRequestId(''); setResponse(null); return }
+    setSelectedRequestId(id); setRequestName(saved.name); setMethod(saved.method); setUrl(saved.url_template)
+    setEnvironmentId(saved.environment_id ?? '')
+    setCollectionId(saved.collection_id ?? '')
+    setBody(typeof saved.body === 'string' ? saved.body : saved.body == null ? '' : JSON.stringify(saved.body, null, 2))
+    setHeaders(Object.entries(saved.headers).map(([key, value], index) => ({ id: index + 1, key, value, description: '', enabled: true })))
+    setParams(Object.entries(saved.query_params).map(([key, value], index) => ({ id: index + 100, key, value, description: '', enabled: true })))
+    setResponse(null); setError(null)
+  }
+
+  async function deleteSavedRequest() {
+    if (!selectedRequestId) return
+    try {
+      await workspaceService.deleteRequest(selectedRequestId)
+      setSavedRequests((current) => current.filter((item) => item.id !== selectedRequestId))
+      resetRequest()
+      setNotice('Saved request deleted.')
+    } catch (err) { setError(err instanceof Error ? err.message : 'Unable to delete request.') }
+  }
+
   async function copyText(value: string, label: string) {
     try {
       await navigator.clipboard.writeText(value)
@@ -280,6 +357,10 @@ export function WorkspacePage() {
   }
 
   function resetRequest() {
+    setSelectedRequestId('')
+    setRequestName('New request')
+    setCollectionId('')
+    setEnvironmentId('')
     setMethod('GET')
     setUrl('https://httpbin.org/get')
     setBody(sampleBody)
@@ -294,12 +375,12 @@ export function WorkspacePage() {
     response === null
       ? ''
       : responseTab === 'Headers'
-        ? JSON.stringify(response.headers, null, 2)
+        ? JSON.stringify(response.response_headers, null, 2)
         : responseTab === 'Cookies'
           ? 'Cookies are not exposed by the execution response.'
           : responseTab === 'Raw'
-            ? response.body
-            : formatResponseBody(response.body)
+            ? (response.response_body ?? response.error_message ?? '')
+            : formatResponseBody(response.response_body ?? response.error_message ?? '')
 
   return (
     <>
@@ -309,7 +390,7 @@ export function WorkspacePage() {
         description="Compose requests, inspect responses, and save repeatable API checks."
         actions={
           <>
-            <Button onClick={() => setNotice('Request saving is not connected yet.')}>
+            <Button onClick={() => void saveRequest()} disabled={!project}>
               <Save size={15} /> Save request
             </Button>
             <Button variant="primary" onClick={sendRequest} disabled={loading}>
@@ -333,6 +414,21 @@ export function WorkspacePage() {
       )}
 
       <div className="workspace-toolbar">
+        <div className="workspace-request-picker">
+          <input aria-label="Request name" value={requestName} onChange={(event) => setRequestName(event.target.value)} />
+          <select aria-label="Open saved request" value={selectedRequestId} onChange={(event) => openSavedRequest(event.target.value)}>
+            <option value="">{loadingSaved ? 'Loading requests…' : 'New request'}</option>
+            {savedRequests.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select aria-label="Request collection" value={collectionId} onChange={(event) => setCollectionId(event.target.value)}>
+            <option value="">No collection</option>
+            {collections.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+          <select aria-label="Execution environment" value={environmentId} onChange={(event) => setEnvironmentId(event.target.value)}>
+            <option value="">No environment</option>
+            {environments.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
         <div className="crumb-small">
           <span>Collections</span>
           <span>/</span>
@@ -341,6 +437,7 @@ export function WorkspacePage() {
         </div>
         <div className="toolbar-actions">
           <Badge>{response ? 'Executed' : 'Unsaved'}</Badge>
+          {selectedRequestId && <Button size="sm" variant="danger" onClick={() => void deleteSavedRequest()} aria-label="Delete saved request"><Trash2 size={14} /> Delete</Button>}
           <Button
             size="sm"
             onClick={() =>
@@ -526,8 +623,8 @@ export function WorkspacePage() {
           <div className="auth-placeholder">
             <label htmlFor="auth-type">Authorization</label>
             <p>
-              Add an Authorization header under Headers. Dedicated auth modes
-              will be implemented in a later step.
+              Add an Authorization header under Headers. For reusable secrets,
+              store the value in an encrypted secret variable on an environment.
             </p>
           </div>
         )}
@@ -552,7 +649,7 @@ export function WorkspacePage() {
             {loading
               ? 'Executing'
               : response
-                ? `${response.status_code} ${response.status_code < 400 ? 'Success' : 'Error'}`
+                ? `${response.response_status_code ?? response.status} ${response.status === 'completed' ? 'Completed' : 'Failed'}`
                 : error
                   ? 'Failed'
                   : 'Not executed'}
@@ -584,12 +681,12 @@ export function WorkspacePage() {
         {response && (
           <>
             <div className="response-meta">
-              <span>STATUS <strong>{response.status_code}</strong></span>
-              <span>TIME <strong>{response.duration_ms.toFixed(2)} ms</strong></span>
-              <span>SIZE <strong>{formatBytes(response.size_bytes)}</strong></span>
+              <span>STATUS <strong>{response.response_status_code ?? response.status}</strong></span>
+              <span>TIME <strong>{response.duration_ms ?? 0} ms</strong></span>
+              <span>EXECUTION <strong>{response.id.slice(0, 8)}</strong></span>
             </div>
             <div className="response-meta">
-              <span>FINAL URL <strong>{response.final_url}</strong></span>
+              <span>REQUEST URL <strong>{response.url}</strong></span>
             </div>
             <div className="tab-bar">
               {['Pretty', 'Raw', 'Headers', 'Cookies'].map((tab) => (

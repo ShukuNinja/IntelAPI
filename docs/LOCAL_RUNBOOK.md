@@ -1,10 +1,10 @@
 ﻿# IntelAPI â€” Local Development Runbook
 
-**Refresh date:** 2026-10-19
+**Refresh date:** 2026-10-21
 **Primary environment:** Windows 10/11, PowerShell, Docker Desktop, Compose v2.
 **Backend Python target:** Python 3.12 (see `apps/api/pyproject.toml`).
 
-This runbook reflects the current repository layout. It does not imply that the full product workflow is implemented. See `IMPLEMENTATION_STATUS.md` and `M0_BASELINE_AUDIT.md` for the current status and verification boundaries.
+This runbook describes the integrated MVP on `frontend-backend_integration`. See `COMPLETION_LOG.md` for current verification and remaining acceptance boundaries. `M0_BASELINE_AUDIT.md` is a historical baseline record.
 
 ## 1. Prerequisites
 
@@ -17,18 +17,17 @@ This runbook reflects the current repository layout. It does not imply that the 
 
 Use the Compose PostgreSQL service for local development unless there is an explicit reason to use another database.
 
-## 2. Refresh and inspect the baseline
+## 2. Inspect the active integration branch
 
 ```powershell
-git switch main
-git pull --ff-only origin main
+git branch --show-current
 git status --short
 git rev-parse HEAD
 git diff --check
 docker compose config --services
 ```
 
-Do not start a milestone from a dirty tree without first identifying and preserving the changes. Do not overwrite a working local `.env` without backing up its local-only values outside the repository.
+Keep work on `frontend-backend_integration` for this project task. Do not merge it into `main`. Identify and preserve existing local changes before editing. Do not overwrite a working local `.env` or expose its local-only values.
 
 ## 3. Environment configuration
 
@@ -40,7 +39,7 @@ Copy-Item .\.env.example .\.env
 
 Review and replace example values with local-only secrets. Do not commit `.env`, OAuth credentials, provider keys, session/encryption keys, database dumps, or real user data. The API has an `apps/api/.env.example` as well; inspect settings and Compose configuration to determine which values are consumed from the root `.env` versus the API process.
 
-`VITE_API_BASE_URL` is a Vite build-time variable. The current Docker web image does not configure it and has no `/api` reverse proxy. The frontend API client therefore defaults to same-origin, which is not yet a working API routing strategy in the current static-web container. This is a known integration gap; do not claim live frontend/API connectivity until a strategy is implemented and tested.
+`VITE_API_BASE_URL` is a Vite build-time variable. Compose builds the web app with `http://localhost:8000` by default, so browser API calls go directly to the local API service. The API CORS configuration permits the local web origin and credentialed requests. If you change the local ports or origins, update the Vite build argument and API `CORS_ORIGINS` together, then rebuild the web image.
 
 ## 4. Start and inspect the stack
 
@@ -73,7 +72,7 @@ docker compose exec api alembic current
 docker compose exec api alembic check
 ```
 
-The metadata endpoint currently reports `status: scaffold` and is protected by the authenticated versioned router. If the request returns an authentication error, that is consistent with the current router configuration.
+The versioned metadata endpoint is authenticated; an authentication error before sign-in is expected. The liveness and readiness probes are public.
 
 Do not use `Base.metadata.create_all()` to bypass migrations. All schema changes require reviewed Alembic revisions. Test migrations against PostgreSQL, not only SQLite. Do not drop/reset the database as routine troubleshooting.
 
@@ -98,21 +97,22 @@ If a tool is missing from the container, inspect the dev dependency installation
 
 ## 7. Frontend quality gates
 
-Run from the repository root:
+Run from the repository root. Compose supplies `VITE_API_BASE_URL` as a build argument. For a standalone local Vite server or build, set it to the host API origin first:
 
 ```powershell
 npm ci --prefix apps/web
+$env:VITE_API_BASE_URL = "http://localhost:8000"
 npm run typecheck --prefix apps/web
 npm run lint --prefix apps/web
 npm run build --prefix apps/web
 ```
 
-The frontend pages currently include demo fixtures. A successful typecheck/lint/build does not prove the UI is connected to real API data.
+The integrated feature pages call the API and use persisted project data. Typecheck, lint, and build checks do not prove authenticated user flows, which require a signed-in browser session. If the browser reports an HTML response where JSON is expected, confirm that the build-time `VITE_API_BASE_URL` points to the API origin rather than the web origin.
 
 ## 8. Security and data handling
 
 - Do not paste or commit raw `.env` values, access tokens, session cookies, provider keys, Google credentials, database passwords, or private keys.
-- All target API calls and URL-based specification imports must pass through the approved outbound-request boundary once implemented.
+- All target API calls and URL-based specification imports pass through the shared outbound-request boundary.
 - Do not issue direct target requests from route handlers as a shortcut.
 - Do not execute generated candidates without validation and explicit execution.
 - Inspect `docker compose config` output locally before sharing it; environment interpolation can expose secret values.
@@ -121,9 +121,8 @@ The frontend pages currently include demo fixtures. A successful typecheck/lint/
 ## 9. Working on a milestone
 
 ```powershell
-git switch main
-git pull --ff-only origin main
-git switch -c feat/short-task-name
+git branch --show-current
+git status --short
 ```
 
 After a scoped change:
@@ -134,7 +133,7 @@ git status --short
 git diff --stat
 ```
 
-Run relevant tests and quality checks, commit only intended files, push the feature branch, and open a PR. Do not push feature work directly to `main` or force-push shared branches.
+Run relevant tests and quality checks, commit only intended files, and keep this integration work on its feature branch. Do not switch to or merge into `main` for this task.
 
 ## 10. Troubleshooting
 
@@ -163,7 +162,7 @@ Inside the API container, the database host must be the Compose service name (`d
 
 ### Browser requests fail
 
-Check the browser Network panel, `VITE_API_BASE_URL`, API logs, CORS origins, and cookie settings. The current static-web container does not proxy `/api`; same-origin fallback is not sufficient without a proxy. Do not solve cookie/CORS problems by allowing all origins with credentials.
+Check the browser Network panel, the built `VITE_API_BASE_URL`, API logs, allowed CORS origins, and cookie settings. Local development uses a direct API origin; do not solve cookie/CORS problems by allowing all origins with credentials.
 
 ## 11. When reporting a failure
 
