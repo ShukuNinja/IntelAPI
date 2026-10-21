@@ -41,7 +41,10 @@ def validate_outbound_url(url: str) -> None:
                 parsed.port or (443 if parsed.scheme == "https" else 80),
                 type=socket.SOCK_STREAM,
             )
-            addresses = [ipaddress.ip_address(item[4][0].split("%", 1)[0]) for item in answers]
+            addresses = [
+                ipaddress.ip_address(str(item[4][0]).split("%", 1)[0])
+                for item in answers
+            ]
         if not addresses:
             raise ValueError("Host did not resolve.")
         for address in addresses:

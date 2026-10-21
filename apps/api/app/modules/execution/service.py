@@ -86,6 +86,8 @@ def _build_url(template: str, environment: Environment | None, variables: dict[s
     if "{{base_url}}" in template and "base_url" not in variables:
         raise _fail("MISSING_BASE_URL", "The selected environment does not define a base URL.")
     resolved = _substitute(template, variables)
+    if not isinstance(resolved, str):
+        raise _fail("INVALID_URL", "The resolved request URL must be a string.")
     if resolved.startswith("/"):
         if environment is None or not environment.base_url:
             raise _fail("MISSING_BASE_URL", "A relative URL requires an environment base URL.")
