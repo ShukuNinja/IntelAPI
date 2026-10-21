@@ -31,7 +31,6 @@ jobs:
           POSTGRES_DB: api_intelligence
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
-          SECRET_ENCRYPTION_KEY: ${{ secrets.SECRET_ENCRYPTION_KEY }}
         options: >-
           --health-cmd "pg_isready -U postgres -d api_intelligence"
           --health-interval 5s
@@ -42,6 +41,7 @@ jobs:
     env:
       DATABASE_URL: postgresql+psycopg://postgres@localhost:5432/api_intelligence
       PGPASSWORD: postgres
+      SECRET_ENCRYPTION_KEY: ${{ secrets.SECRET_ENCRYPTION_KEY }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
