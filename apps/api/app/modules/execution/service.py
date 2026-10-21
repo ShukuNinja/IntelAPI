@@ -3,6 +3,7 @@ import re
 import time
 from typing import Any
 from urllib.parse import urlencode, urljoin
+from uuid import UUID
 
 import httpx
 from fastapi import HTTPException
@@ -113,57 +114,97 @@ def execute_saved_request(
     owner_user_id: object,
     environment_override_id: object | None,
     timeout_seconds: float,
+    campaign_id: UUID | None = None,
+    test_case_id: UUID | None = None,
 ) -> Execution:
+    return execute_request_definition(
+        db,
+        project_id=saved_request.project_id,
+        saved_request_id=saved_request.id,
+        owner_user_id=owner_user_id,
+        environment_override_id=environment_override_id or saved_request.environment_id,
+        timeout_seconds=timeout_seconds,
+        method=saved_request.method,
+        url_template=saved_request.url_template,
+        headers=saved_request.headers or {},
+        query_params=saved_request.query_params or {},
+        body=saved_request.body,
+        body_type=saved_request.body_type,
+        campaign_id=campaign_id,
+        test_case_id=test_case_id,
+    )
+
+
+def execute_request_definition(
+    db: Session,
+    *,
+    project_id: UUID,
+    saved_request_id: UUID | None,
+    owner_user_id: object,
+    environment_override_id: object | None,
+    timeout_seconds: float,
+    method: str,
+    url_template: str,
+    headers: dict[str, Any],
+    query_params: dict[str, Any],
+    body: Any,
+    body_type: str,
+    campaign_id: UUID | None = None,
+    test_case_id: UUID | None = None,
+) -> Execution:
+    """Execute an owned request definition through the shared guarded transport."""
     project = db.scalar(
         select(Project).where(
-            Project.id == saved_request.project_id,
+            Project.id == project_id,
             Project.owner_user_id == owner_user_id,
             Project.deleted_at.is_(None),
         )
     )
     if project is None:
-        raise _fail("NOT_FOUND", "Saved request not found.", 404)
-    selected_id = environment_override_id or saved_request.environment_id
+        raise _fail("NOT_FOUND", "Request definition not found.", 404)
+    selected_id = environment_override_id
     environment: Environment | None = None
     if selected_id is not None:
         environment = db.scalar(
             select(Environment).where(
-                Environment.id == selected_id, Environment.project_id == saved_request.project_id
+                Environment.id == selected_id, Environment.project_id == project_id
             )
         )
         if environment is None:
             raise _fail("INVALID_ENVIRONMENT", "Environment must belong to the request's project.")
     variables, secret_values = _load_variables(db, environment)
-    url = _build_url(saved_request.url_template, environment, variables)
+    url = _build_url(url_template, environment, variables)
     validate_outbound_url(url)
-    headers = _headers(_substitute(saved_request.headers or {}, variables))
-    params = _substitute(saved_request.query_params or {}, variables)
-    body = _substitute(saved_request.body, variables)
+    headers = _headers(_substitute(headers, variables))
+    params = _substitute(query_params, variables)
+    body = _substitute(body, variables)
     content: bytes | None = None
-    if saved_request.body_type == "json":
+    if body_type == "json":
         content = json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
         headers.setdefault("Content-Type", "application/json")
-    elif saved_request.body_type == "text":
+    elif body_type == "text":
         content = str(body if body is not None else "").encode("utf-8")
-    elif saved_request.body_type == "form_urlencoded":
+    elif body_type == "form_urlencoded":
         if not isinstance(body, dict):
             raise _fail("INVALID_BODY", "Form URL-encoded body must be an object.")
         content = urlencode(body, doseq=True).encode("utf-8")
         headers.setdefault("Content-Type", "application/x-www-form-urlencoded")
-    elif saved_request.body_type == "multipart":
+    elif body_type == "multipart":
         raise _fail(
             "UNSUPPORTED_BODY_TYPE", "Multipart bodies are not supported by this execution version."
         )
-    elif saved_request.body_type != "none":
+    elif body_type != "none":
         raise _fail("INVALID_BODY_TYPE", "The saved request has an unsupported body type.")
 
     started = time.monotonic()
     execution = Execution(
-        project_id=saved_request.project_id,
-        saved_request_id=saved_request.id,
+        project_id=project_id,
+        saved_request_id=saved_request_id,
+        campaign_id=campaign_id,
+        test_case_id=test_case_id,
         environment_id=environment.id if environment else None,
         status="failed",
-        method=saved_request.method.upper(),
+        method=method.upper(),
         url=_redact(url, secret_values) or url,
         response_headers={},
     )

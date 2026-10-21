@@ -27,6 +27,8 @@ class ExecutionRead(BaseModel):
     project_id: UUID
     saved_request_id: UUID | None
     environment_id: UUID | None
+    campaign_id: UUID | None = None
+    test_case_id: UUID | None = None
     status: str
     method: str
     url: str

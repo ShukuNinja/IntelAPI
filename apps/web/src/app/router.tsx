@@ -6,8 +6,9 @@ import { ExplorerPage } from '../features/explorer/ExplorerPage'
 import { FindingsPage } from '../features/findings/FindingsPage'
 import { HealthChecksPage } from '../features/health/HealthChecksPage'
 import { OverviewPage } from '../features/overview/OverviewPage'
-import { SimplePage } from '../features/misc/SimplePage'
+import { SettingsPage } from '../features/misc/SettingsPage'
 import { WorkspacePage } from '../features/workspace/WorkspacePage'
+import { CollectionsPage, EnvironmentsPage, HistoryPage } from '../features/workspace/WorkspaceResourcePages'
 import { LoginPage } from '../features/auth/LoginPage'
 import { useAuth } from '../features/auth/AuthContext'
 
@@ -52,10 +53,10 @@ export const router = createBrowserRouter([
       { path: 'explorer', element: <ExplorerPage /> },
       { path: 'campaigns', element: <CampaignsPage /> },
       { path: 'findings', element: <FindingsPage /> },
-      { path: 'collections', element: <SimplePage kind="collections" /> },
-      { path: 'environments', element: <SimplePage kind="environments" /> },
-      { path: 'history', element: <SimplePage kind="history" /> },
-      { path: 'settings', element: <SimplePage kind="settings" /> },
+      { path: 'collections', element: <CollectionsPage /> },
+      { path: 'environments', element: <EnvironmentsPage /> },
+      { path: 'history', element: <HistoryPage /> },
+      { path: 'settings', element: <SettingsPage /> },
       { path: '*', element: <Navigate to="/" replace /> },
       { path: 'projects', element: <ProjectsPage /> },
     ],

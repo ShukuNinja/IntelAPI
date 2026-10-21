@@ -39,7 +39,7 @@ export async function apiRequest<T>(
     headers.set('Accept', 'application/json')
   }
 
-  if (init?.body && !headers.has('Content-Type')) {
+  if (typeof init?.body === 'string' && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
 
@@ -61,8 +61,19 @@ export async function apiRequest<T>(
 
   if (!response.ok) {
     const requestId = response.headers.get('x-request-id') ?? undefined
+    let message = `API request failed (${response.status})`
+    try {
+      const payload = await response.json() as {
+        error?: { message?: unknown }
+        detail?: { message?: unknown } | string
+      }
+      const apiMessage = payload.error?.message ?? (typeof payload.detail === 'object' ? payload.detail?.message : payload.detail)
+      if (typeof apiMessage === 'string' && apiMessage.trim()) message = apiMessage
+    } catch {
+      // Keep the status-based message if the server did not return JSON.
+    }
     throw new ApiError(
-      `API request failed (${response.status})`,
+      message,
       response.status,
       requestId,
     )
