@@ -17,6 +17,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.environment_variable import EnvironmentVariable
 
+
 class Environment(Base):
     """A project-scoped set of request configuration variables."""
 

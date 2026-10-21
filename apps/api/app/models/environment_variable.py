@@ -1,5 +1,3 @@
-from app.models.environment import Environment
-
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -19,6 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+from app.models.environment import Environment
 
 
 class EnvironmentVariable(Base):
@@ -34,7 +33,7 @@ class EnvironmentVariable(Base):
     )
 
     environment: Mapped["Environment"] = relationship(
-    back_populates="variables",
+        back_populates="variables",
     )
 
     key: Mapped[str] = mapped_column(String(160), nullable=False)

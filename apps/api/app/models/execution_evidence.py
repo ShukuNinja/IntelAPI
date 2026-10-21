@@ -11,6 +11,7 @@ from app.db.base import Base
 if TYPE_CHECKING:
     from app.models.execution import Execution
 
+
 class ExecutionEvidence(Base):
     __tablename__ = "execution_evidence"
 

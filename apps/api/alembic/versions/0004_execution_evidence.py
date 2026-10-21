@@ -1,9 +1,11 @@
 """Persist outbound request executions and behavioral evidence."""
+
 from collections.abc import Sequence
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 revision: str = "0004_execution_evidence"
 down_revision: str | None = "0003_workspace_assets"
@@ -27,14 +29,22 @@ def upgrade() -> None:
         sa.Column("duration_ms", sa.Integer(), nullable=True),
         sa.Column("error_code", sa.String(64), nullable=True),
         sa.Column("error_message", sa.Text(), nullable=True),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["project_id"], ["projects.id"], ondelete="RESTRICT"),
         sa.ForeignKeyConstraint(["saved_request_id"], ["saved_requests.id"], ondelete="SET NULL"),
         sa.ForeignKeyConstraint(["environment_id"], ["environments.id"], ondelete="SET NULL"),
         sa.PrimaryKeyConstraint("id"),
     )
-    op.create_index("ix_executions_project_created", "executions", ["project_id", sa.text("created_at DESC")])
-    op.create_index("ix_executions_request_created", "executions", ["saved_request_id", sa.text("created_at DESC")])
+    op.create_index(
+        "ix_executions_project_created", "executions", ["project_id", sa.text("created_at DESC")]
+    )
+    op.create_index(
+        "ix_executions_request_created",
+        "executions",
+        ["saved_request_id", sa.text("created_at DESC")],
+    )
     op.create_table(
         "execution_evidence",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
@@ -44,7 +54,9 @@ def upgrade() -> None:
         sa.Column("title", sa.String(200), nullable=False),
         sa.Column("message", sa.Text(), nullable=False),
         sa.Column("details", postgresql.JSONB(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.ForeignKeyConstraint(["execution_id"], ["executions.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )

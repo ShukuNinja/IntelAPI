@@ -114,9 +114,7 @@ def second_authenticated_client() -> Generator[TestClient, None, None]:
 
 
 @pytest.fixture
-def two_authenticated_clients() -> Generator[
-    tuple[TestClient, TestClient], None, None
-]:
+def two_authenticated_clients() -> Generator[tuple[TestClient, TestClient], None, None]:
     """Create two authenticated users sharing one rollback-only DB transaction."""
     connection = engine.connect()
     transaction = connection.begin()
