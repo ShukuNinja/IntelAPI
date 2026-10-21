@@ -247,7 +247,10 @@ def _evaluate_case(
                     [type_names.get(type(entry), "unknown") for entry in values] if exists else None
                 )
                 passed = (
-                    exists and bool(actual) and all(kind == item.get("expected") for kind in actual)
+                    exists
+                    and isinstance(actual, list)
+                    and bool(actual)
+                    and all(kind == item.get("expected") for kind in actual)
                 )
                 if isinstance(actual, list) and len(actual) == 1 and not wildcard:
                     actual = actual[0]

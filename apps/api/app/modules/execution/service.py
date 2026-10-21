@@ -114,8 +114,8 @@ def execute_saved_request(
     owner_user_id: object,
     environment_override_id: object | None,
     timeout_seconds: float,
-    campaign_id: object | None = None,
-    test_case_id: object | None = None,
+    campaign_id: UUID | None = None,
+    test_case_id: UUID | None = None,
 ) -> Execution:
     return execute_request_definition(
         db,

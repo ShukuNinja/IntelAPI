@@ -2,7 +2,7 @@
 
 from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -17,6 +17,7 @@ from app.api.campaigns.schemas import (
     CampaignListRead,
     CampaignRead,
     CampaignReportRead,
+    CampaignState,
     TestCaseRead,
 )
 from app.api.executions.persisted_schemas import ExecutionListRead, ExecutionRead
@@ -79,7 +80,7 @@ def campaign_read(db: Session, row: Campaign) -> CampaignRead:
         id=row.id,
         project_id=row.project_id,
         name=row.name,
-        state=row.state,
+        state=cast(CampaignState, row.state),
         configuration=row.configuration,
         budget_max_executions=row.budget_max_executions,
         budget_max_iterations=row.budget_max_iterations,
@@ -128,9 +129,10 @@ def _parameter_example(parameter: dict[str, Any]) -> Any:
         if isinstance(enum, list) and enum:
             return enum[0]
         kind = schema.get("type")
-        return {"integer": 1, "number": 1, "boolean": True, "array": [], "object": {}}.get(
-            kind, "sample"
-        )
+        if isinstance(kind, str):
+            return {"integer": 1, "number": 1, "boolean": True, "array": [], "object": {}}.get(
+                kind, "sample"
+            )
     return "sample"
 
 

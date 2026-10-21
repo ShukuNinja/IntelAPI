@@ -145,7 +145,8 @@ async def import_specification(
     project = get_owned_project(db, project_id, current_user.id)
     source_kind = "url" if payload.url is not None else "file"
     source_url = str(payload.url) if payload.url is not None else None
-    if source_url:
+    content: str | None
+    if payload.url is not None:
         try:
             response = await execute_request(
                 ExecutionRequest(

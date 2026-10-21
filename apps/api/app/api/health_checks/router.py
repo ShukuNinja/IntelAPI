@@ -1,7 +1,7 @@
 """Persisted health checks and execution assertion results."""
 
 import json
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -383,7 +383,7 @@ def run_health_check(
     db.flush()
     record_assertion_findings(db, row, execution, results)
     db.commit()
-    status_value = (
+    status_value: Literal["healthy", "degraded", "unavailable"] = (
         "unavailable"
         if execution.status != "completed"
         else "healthy"
@@ -417,6 +417,6 @@ def list_health_check_results(
     results = []
     for result, execution_status in rows:
         item = AssertionResultRead.model_validate(result)
-        item.execution_status = execution_status
+        item.execution_status = cast(Literal["completed", "failed"], execution_status)
         results.append(item)
     return results

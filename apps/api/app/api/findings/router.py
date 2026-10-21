@@ -1,6 +1,6 @@
 """Evidence-backed findings with user-owned triage fields."""
 
-from typing import Annotated
+from typing import Annotated, cast
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -12,7 +12,9 @@ from app.api.findings.schemas import (
     EvidenceReferenceRead,
     FindingListRead,
     FindingRead,
+    FindingStatus,
     FindingTriageUpdate,
+    Severity,
 )
 from app.db.session import get_db
 from app.models.finding import EvidenceReference, Finding
@@ -64,8 +66,8 @@ def _read(db: Session, row: Finding) -> FindingRead:
         classification=row.classification,
         machine_severity=row.machine_severity,
         confidence=float(row.confidence) if row.confidence is not None else None,
-        user_status=row.user_status,
-        user_severity=row.user_severity,
+        user_status=cast(FindingStatus, row.user_status),
+        user_severity=cast(Severity | None, row.user_severity),
         triage_note=row.triage_note,
         created_at=row.created_at,
         updated_at=row.updated_at,
