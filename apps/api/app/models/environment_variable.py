@@ -1,3 +1,5 @@
+from app.models.environment import Environment
+
 from datetime import datetime
 from uuid import UUID, uuid4
 
@@ -14,7 +16,7 @@ from sqlalchemy import (
     false,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
@@ -29,6 +31,10 @@ class EnvironmentVariable(Base):
     environment_id: Mapped[UUID] = mapped_column(
         ForeignKey("environments.id", ondelete="CASCADE"),
         nullable=False,
+    )
+
+    environment: Mapped["Environment"] = relationship(
+    back_populates="variables",
     )
 
     key: Mapped[str] = mapped_column(String(160), nullable=False)

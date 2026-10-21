@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -9,10 +10,12 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
 
+if TYPE_CHECKING:
+    from app.models.environment_variable import EnvironmentVariable
 
 class Environment(Base):
     """A project-scoped set of request configuration variables."""
@@ -39,6 +42,12 @@ class Environment(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+    variables: Mapped[list["EnvironmentVariable"]] = relationship(
+        back_populates="environment",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        order_by="EnvironmentVariable.key",
     )
 
     __table_args__ = (

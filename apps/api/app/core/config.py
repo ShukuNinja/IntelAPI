@@ -12,6 +12,9 @@ class Settings(BaseSettings):
         case_sensitive=False,
     )
 
+    # Fernet key used to encrypt environment secrets at rest.
+    secret_encryption_key: SecretStr | None = None
+
     # NVIDIA Build LLM provider.
     nvidia_api_key: SecretStr | None = None
     nvidia_model: str = "openai/gpt-oss-20b"

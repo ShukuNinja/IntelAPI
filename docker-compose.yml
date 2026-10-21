@@ -22,6 +22,7 @@ services:
       NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
       NVIDIA_MODEL: ${NVIDIA_MODEL:-openai/gpt-oss-20b}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?Set SECRET_ENCRYPTION_KEY in .env}
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
       db: { condition: service_healthy }
@@ -31,6 +32,12 @@ services:
       timeout: 3s
       retries: 10
     restart: unless-stopped
+    volumes:
+      - ./apps/api/app:/app/app
+      - ./apps/api/tests:/app/tests
+      - ./apps/api/alembic:/app/alembic
+      - ./apps/api/pyproject.toml:/app/pyproject.toml
+      - ./apps/api/alembic.ini:/app/alembic.ini
 
   web:
     build:
