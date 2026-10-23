@@ -26,6 +26,22 @@ MAX_OUTPUT_TOKENS = 1200
 MAX_JSON_DEPTH = 32
 MAX_SEMANTIC_FACTS = 40
 PROMPT_VERSION = "api-test-generation-v1"
+PROPOSALS_JSON_SCHEMA: dict[str, Any] = {
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "category": {"type": "string", "enum": ["positive", "negative", "boundary", "schema", "workflow"]},
+            "title": {"type": "string"},
+            "parameters": {"type": "object"},
+            "body": {"anyOf": [{"type": "object"}, {"type": "null"]},
+            "rationale": {"type": "string"},
+        },
+        "required": ["category", "title", "parameters", "body", "rationale"],
+        "additionalProperties": False,
+    },
+    "maxItems": MAX_PROPOSALS,
+}
 
 
 class LLMProposalError(ValueError):
@@ -84,6 +100,7 @@ def _build_request(
         ),
         user_prompt=f"Propose test candidates for this operation:\n{context}",
         max_output_tokens=MAX_OUTPUT_TOKENS,
+        json_schema=PROPOSALS_JSON_SCHEMA,
     )
 
 

@@ -290,6 +290,9 @@ tbody tr:hover { background: #171f2d; }
   .project-switcher__icon { width: 34px; height: 34px; }
   .nav-link { justify-content: center; padding: 0; }
   .nav-link svg { flex: 0 0 auto; }
+  .nav-link { position: relative; }
+  .nav-link::after { content: attr(data-tooltip); position: fixed; z-index: 1000; left: 74px; margin-top: 0; padding: 7px 10px; border: 1px solid #dbe4ef; border-radius: 7px; background: #fff; color: #30435b; box-shadow: 0 5px 18px rgba(31, 54, 82, .16); font-size: 12px; font-weight: 600; white-space: nowrap; opacity: 0; pointer-events: none; transform: translateY(-50%) translateX(-4px); transition: opacity .12s, transform .12s; }
+  .nav-link:hover::after, .nav-link:focus-visible::after { opacity: 1; transform: translateY(-50%) translateX(0); }
   .profile { justify-content: center; padding-top: 12px; }
   .main-column { margin-left: 66px; }
   .main-content { padding: 22px 17px 30px; }
@@ -658,6 +661,19 @@ tbody tr:hover { background: #f7f9fc; }
 .campaign-case__details p, .finding-card > p { color: #63758c !important; }
 .experiment-run-card .experiment-warning { color: #a66d27 !important; }
 .experiment-inspection > summary { color: #344963; background: #f7f9fc; }
+.experiment-verdict { margin-top: 10px; padding: 10px 11px; border: 1px solid #dce7f5; border-radius: 9px; background: #f5f8fd; }
+.experiment-verdict strong { color: #344963; font-size: 12px; }
+.experiment-verdict p, .experiment-evidence-intro p, .experiment-test-meaning p { margin: 5px 0 0; color: #63758c; font-size: 12px; line-height: 1.55; }
+.experiment-verdict--success { background: #f0f8f3; border-color: #d8ebdf; }
+.experiment-verdict--success strong { color: #357b5b; }
+.experiment-verdict--danger { background: #fff3f3; border-color: #f0d9dc; }
+.experiment-verdict--danger strong { color: #b6505c; }
+.experiment-evidence-intro, .experiment-test-meaning { margin: 12px 0; padding: 11px 13px; border-radius: 8px; background: #f2f6fc; }
+.experiment-evidence-intro strong, .experiment-test-meaning strong { color: #3c5879; font-size: 12px; }
+.experiment-metric-guide { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 12px; align-items: start; margin-top: 16px; padding: 13px 15px; border: 1px solid #dce7f5; border-radius: 10px; background: linear-gradient(110deg, #f1f6ff, #f2faf5); }
+.experiment-metric-guide > div { display: flex; align-items: center; gap: 9px; color: #5476b7; }
+.experiment-metric-guide strong { color: #344963; font-size: 12px; }
+.experiment-metric-guide p { margin: 0; color: #63758c; font-size: 12px; line-height: 1.6; }
 .tab-button { color: #718096 !important; }
 .tab-button:hover { color: #344963 !important; }
 .tab-button--active { color: #5274b8 !important; }
@@ -691,6 +707,7 @@ tbody tr:hover { background: #f7f9fc; }
   .create-form input, .create-form select { width: 100%; max-width: none; min-height: 40px; }
   .page-header__actions > .button { flex: 1 1 auto; }
   .experiment-run-grid { grid-template-columns: minmax(0, 1fr); }
+  .experiment-metric-guide { grid-template-columns: minmax(0, 1fr); }
   .campaign-report-anchor .metrics-grid { grid-template-columns: minmax(0, 1fr); }
   .campaign-report-anchor .panel__header { flex-wrap: wrap; }
   .filter-toolbar > .button { width: 100%; }

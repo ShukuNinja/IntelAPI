@@ -52,6 +52,29 @@ function tone(state: string): 'success' | 'danger' | 'info' | 'neutral' {
   return 'neutral'
 }
 
+function runSummary(run: Experiment['runs'][number], inspection?: RunInspection): { title: string; detail: string; tone: 'success' | 'danger' | 'info' | 'neutral' } {
+  const mode = String(run.generation_metadata.mode ?? '')
+  const llmStatus = String(run.generation_metadata.llm_status ?? '')
+  if (mode === 'llm') {
+    const failed = inspection?.executions.filter(item => item.status === 'failed').length ?? 0
+    const completed = inspection?.executions.filter(item => item.status === 'completed').length ?? 0
+    return { title: 'LLM candidates used', detail: `${Number(run.generation_metadata.valid_candidate_count ?? run.candidate_count)} candidates passed validation. ${inspection ? `${completed} requests completed and ${failed} failed.` : 'Loading request outcomes…'} Request completion does not alone mean the behavior passed.`, tone: failed ? 'danger' : 'success' }
+  }
+  if (mode === 'deterministic_fallback') return { title: 'Fallback candidates used', detail: typeof run.generation_metadata.warning === 'string' ? run.generation_metadata.warning : 'The LLM candidates were unavailable; deterministic candidates were used.', tone: 'info' }
+  if (llmStatus === 'not_used') return { title: 'LLM not used', detail: 'This approach selects deterministic candidates by design.', tone: 'neutral' }
+  if (!inspection) return { title: run.state === 'completed' ? 'Run complete' : 'Run in progress', detail: 'Loading test outcomes…', tone: 'info' }
+  const passed = inspection.executions.filter(item => item.status === 'completed').length
+  const failed = inspection.executions.filter(item => item.status === 'failed').length
+  return { title: failed ? `${failed} request${failed === 1 ? '' : 's'} failed` : `${passed} request${passed === 1 ? '' : 's'} completed`, detail: failed ? 'Inspect the failed test rows below for the response or connection error.' : 'A completed request means the target responded; it does not alone prove the API behavior is correct.', tone: failed ? 'danger' : 'success' }
+}
+
+function outcomeMeaning(execution?: CampaignExecution): string {
+  if (!execution) return 'This test has not run yet.'
+  if (execution.status === 'failed') return 'The request could not complete successfully. Review the error and response details.'
+  if (execution.status === 'completed') return 'The API returned a response. Check the expected behavior and response below to judge correctness.'
+  return `Execution status: ${execution.status}.`
+}
+
 export function ExperimentWorkbenchPage() {
   const { project } = useProject()
   const [specifications, setSpecifications] = useState<Specification[]>([])
@@ -240,6 +263,8 @@ export function ExperimentWorkbenchPage() {
     </Panel>
     {comparison && <Panel title={`Comparison · ${comparison.experiment.name}`} subtitle={`Specification ${comparison.experiment.configuration.specification_sha256 ?? ''} · ${comparison.experiment.state}`} action={<Button size="sm" onClick={() => void exportComparison()}><Download size={14} /> Export JSON</Button>}>
       <div className="experiment-run-grid">{comparison.experiment.runs.map(run => {
+        const inspection = inspections[run.campaign_id]
+        const summary = runSummary(run, inspection)
         const rejected = Array.isArray(run.generation_metadata.rejected_candidates)
           ? run.generation_metadata.rejected_candidates as Array<{ kind?: string; index?: number; reason?: string; proposal?: string }>
           : []
@@ -249,6 +274,7 @@ export function ExperimentWorkbenchPage() {
         return <article className="experiment-run-card" key={run.id}>
           <div><strong>{approachDetails[run.approach].title}</strong><Badge tone={tone(run.state)}>{run.state}</Badge>{(run.state === 'queued' || run.state === 'running') && <Button size="sm" disabled={busy} onClick={() => void cancelRun(run)}>Cancel run</Button>}</div>
           <p>{run.candidate_count} saved candidates · {run.execution_count} executed</p>
+          <div className={`experiment-verdict experiment-verdict--${summary.tone}`}><strong>{summary.title}</strong><p>{summary.detail}</p></div>
           <small>{String(run.generation_metadata.mode ?? 'generation pending')} · {String(run.generation_metadata.policy_version ?? '')}</small>
           <small>{provider}{model ? ` · ${model}` : ''} · {validCount} valid · {rejected.filter(item => item.kind === 'candidate').length} rejected</small>
           {typeof run.generation_metadata.warning === 'string' && <small className="experiment-warning">{run.generation_metadata.warning}</small>}
@@ -259,9 +285,9 @@ export function ExperimentWorkbenchPage() {
       <div className="resource-list">{comparison.experiment.runs.map(run => {
         const detail = inspections[run.campaign_id]
         const executionsByTest = new Map(detail?.executions.filter(item => item.test_case_id).map(item => [item.test_case_id as string, item]) ?? [])
-        return <details className="experiment-inspection" key={run.id}><summary><strong>{approachDetails[run.approach].title} run evidence</strong><small>{detail ? `${detail.tests.length} candidates · ${detail.executions.length} requests · ${detail.report.events.length} events` : 'Loading persisted run evidence…'}</small></summary>{detail && <><div className="campaign-case-list">{detail.tests.map(test => { const execution = executionsByTest.get(test.id); return <details className="campaign-case" key={test.id}><summary><span className="campaign-case__heading"><strong>{test.title}</strong><small>{test.category} · {test.generation_provenance}</small></span><span className={`execution-status execution-status--${execution?.status ?? 'pending'}`}>{execution?.status ?? 'pending'}</span><span className="muted-cell">{execution ? `${execution.response_status_code ?? execution.error_code ?? 'No status'} · ${execution.duration_ms ?? '—'} ms` : 'Not executed'}</span></summary><div className="campaign-case__details"><p>{test.description ?? 'No candidate rationale was stored.'}</p><strong>Request candidate</strong><pre className="code-preview">{JSON.stringify(test.request_override, null, 2)}</pre>{test.expected_behavior && <><strong>Declared assertions</strong><pre className="code-preview">{JSON.stringify(test.expected_behavior, null, 2)}</pre></>}{execution?.response_body && <><strong>Redacted response evidence</strong><pre className="code-preview">{execution.response_body.slice(0, 6000)}</pre></>}{execution?.error_message && <p className="notice notice--warning">{execution.error_code}: {execution.error_message}</p>}</div></details> })}</div><Panel title="Selection and execution trace" subtitle="Durable campaign events"><div className="resource-list">{detail.report.events.map(event => <article className="environment-card" key={event.sequence_number}><Badge>{event.sequence_number}</Badge><span className="environment-card__body"><strong>{event.event_type.replaceAll('_', ' ')}</strong><small>{new Date(event.created_at).toLocaleString()} · {JSON.stringify(event.payload)}</small></span></article>)}</div></Panel></>}</details>
+        return <details className="experiment-inspection" key={run.id}><summary><strong>{approachDetails[run.approach].title} run evidence</strong><small>{detail ? `${detail.tests.length} tests · ${detail.executions.length} requests · ${detail.report.events.length} events` : 'Loading persisted run evidence…'}</small></summary>{detail && <><div className="experiment-evidence-intro"><strong>What this run did</strong><p>Each row is one generated API test. Expand it to see the exact request, expected behavior, target response, and why the result matters.</p></div><div className="campaign-case-list">{detail.tests.map(test => { const execution = executionsByTest.get(test.id); return <details className="campaign-case" key={test.id}><summary><span className="campaign-case__heading"><strong>{test.title}</strong><small>{test.category} · {test.generation_provenance === 'INFERRED' ? 'LLM generated' : 'Rule generated'}</small></span><span className={`execution-status execution-status--${execution?.status ?? 'pending'}`}>{execution?.status ?? 'pending'}</span><span className="muted-cell">{execution ? `${execution.response_status_code ?? execution.error_code ?? 'No status'} · ${execution.duration_ms ?? '—'} ms` : 'Not executed'}</span></summary><div className="campaign-case__details"><div className="experiment-test-meaning"><strong>What this result means</strong><p>{outcomeMeaning(execution)}</p></div><p>{test.description ?? 'No candidate rationale was stored.'}</p><strong>Request sent</strong><pre className="code-preview">{JSON.stringify(test.request_override, null, 2)}</pre>{test.expected_behavior && <><strong>Expected behavior</strong><pre className="code-preview">{JSON.stringify(test.expected_behavior, null, 2)}</pre></>}{execution?.response_body && <><strong>Target response (secrets redacted)</strong><pre className="code-preview">{execution.response_body.slice(0, 6000)}</pre></>}{execution?.error_message && <p className="notice notice--warning">{execution.error_code}: {execution.error_message}</p>}</div></details> })}</div><Panel title="Run timeline" subtitle="Key selection and execution events"><div className="resource-list">{detail.report.events.map(event => <article className="environment-card" key={event.sequence_number}><Badge>{event.sequence_number}</Badge><span className="environment-card__body"><strong>{event.event_type.replaceAll('_', ' ')}</strong><small>{new Date(event.created_at).toLocaleString()}</small></span></article>)}</div></Panel></>}</details>
       })}</div>
-      <div className="notice notice--info"><BarChart3 size={16} /><div><strong>Metric limits are explicit</strong><p>N/A values include the reason that data is unavailable. A completed HTTP response alone does not count as a passed assertion.</p></div></div>
+      <div className="experiment-metric-guide"><div><BarChart3 size={18} /><strong>How to read this report</strong></div><p><b>Generated candidates</b> are proposed test ideas. <b>Executed requests</b> show which reached the target. A completed HTTP response means the server replied; it is not a correctness verdict unless a matching expected behavior was checked. <b>N/A</b> means the run did not collect enough evidence for that measure; hover its value for the reason.</p></div>
     </Panel>}
   </>
 }

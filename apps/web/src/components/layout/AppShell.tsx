@@ -53,6 +53,8 @@ function SidebarLink({ item }: { item: NavItem }) {
   return (
     <NavLink
       to={item.to}
+      data-tooltip={item.label}
+      aria-label={item.label}
       end={item.to === '/'}
       className={({ isActive }) =>
         `nav-link${isActive ? ' nav-link--active' : ''}`

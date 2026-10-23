@@ -54,6 +54,12 @@ class NVIDIAProvider:
     def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate text without executing requests against target APIs."""
         try:
+            request_args: dict[str, Any] = {}
+            if request.json_schema is not None:
+                request_args["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {"name": "api_test_candidates", "strict": True, "schema": request.json_schema},
+                }
             response = self._client.chat.completions.create(
                 model=self._model,
                 messages=[
@@ -67,6 +73,7 @@ class NVIDIAProvider:
                     },
                 ],
                 max_tokens=request.max_output_tokens,
+                **request_args,
             )
 
             if not response.choices:

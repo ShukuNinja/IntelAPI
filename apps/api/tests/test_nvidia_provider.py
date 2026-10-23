@@ -62,6 +62,20 @@ def test_generate_returns_llm_response() -> None:
     )
 
 
+def test_generate_requests_json_schema_when_provided() -> None:
+    client = Mock()
+    client.chat.completions.create.return_value = make_response("[]")
+    provider = make_provider(client)
+    schema = {"type": "array", "items": {"type": "string"}}
+
+    provider.generate(LLMRequest("System", "Prompt", 100, json_schema=schema))
+
+    assert client.chat.completions.create.call_args.kwargs["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "api_test_candidates", "strict": True, "schema": schema},
+    }
+
+
 def test_generate_rejects_empty_choices() -> None:
     client = Mock()
     client.chat.completions.create.return_value = SimpleNamespace(choices=[])

@@ -38,6 +38,22 @@ def test_groq_provider_uses_compatible_endpoint_and_records_usage(
     assert (response.provider, response.model, response.total_tokens) == ("groq", "test-model", 15)
 
 
+def test_groq_provider_requests_json_schema_when_provided() -> None:
+    client = Mock()
+    client.chat.completions.create.return_value = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))],
+    )
+    schema = {"type": "array", "items": {"type": "string"}}
+    provider = GroqProvider(api_key="test-key", model="test-model", client=client)
+
+    provider.generate(LLMRequest("System", "Prompt", 64, json_schema=schema))
+
+    assert client.chat.completions.create.call_args.kwargs["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {"name": "api_test_candidates", "strict": True, "schema": schema},
+    }
+
+
 def test_groq_provider_sanitizes_errors() -> None:
     client = Mock()
     client.chat.completions.create.side_effect = RuntimeError("private provider response")

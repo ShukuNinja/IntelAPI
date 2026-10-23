@@ -10,6 +10,7 @@ class LLMRequest:
     system_prompt: str
     user_prompt: str
     max_output_tokens: int = 2048
+    json_schema: dict[str, object] | None = None
 
     def __post_init__(self) -> None:
         if not self.system_prompt.strip():
