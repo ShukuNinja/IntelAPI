@@ -2,13 +2,14 @@ import copy
 import csv
 import io
 import json
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from urllib.parse import quote, urlencode, urlsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from pydantic import AnyHttpUrl, BaseModel, Field
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -34,6 +35,38 @@ class GenerateReportInput(BaseModel):
     per_operation_limit: int = Field(default=20, ge=1, le=20)
 
 
+class CandidateAssertionInput(BaseModel):
+    kind: Literal["header_equals", "json_pointer_exists", "json_pointer_type"]
+    name: str | None = Field(default=None, max_length=64)
+    pointer: str | None = Field(default=None, max_length=512)
+    expected: Any = None
+    expected_type: (
+        Literal["object", "array", "string", "number", "integer", "boolean", "null"] | None
+    ) = None
+
+    @model_validator(mode="after")
+    def validate_assertion(self) -> "CandidateAssertionInput":
+        if self.kind == "header_equals":
+            if self.name is None or self.name.lower() not in {
+                "content-type",
+                "content-length",
+                "date",
+            }:
+                raise ValueError(
+                    "Header assertions support content-type, content-length, and date only."
+                )
+            if not isinstance(self.expected, str):
+                raise ValueError("Header equality assertions require a string expected value.")
+        else:
+            if self.pointer is None or not self.pointer.startswith("/"):
+                raise ValueError("JSON assertions require a JSON Pointer beginning with '/'.")
+            if re.search(r"~(?![01])", self.pointer):
+                raise ValueError("JSON Pointer escape sequences must use ~0 or ~1.")
+            if self.kind == "json_pointer_type" and self.expected_type is None:
+                raise ValueError("JSON type assertions require expected_type.")
+        return self
+
+
 class CandidateExecutionInput(BaseModel):
     base_url: AnyHttpUrl
     query_parameters: dict[str, Any] = Field(default_factory=dict)
@@ -43,6 +76,7 @@ class CandidateExecutionInput(BaseModel):
     confirm_unsafe: bool = False
     expected_status_code: int | None = Field(default=None, ge=100, le=599)
     follow_up_budget: int = Field(default=5, ge=0, le=20)
+    assertions: list[CandidateAssertionInput] = Field(default_factory=list, max_length=20)
 
 
 def _project(db: Session, project_id: UUID) -> Project:
@@ -293,6 +327,7 @@ async def execute_candidate(
             response_headers={},
             response_body=None,
             expected_status_code=payload.expected_status_code,
+            user_assertions=[item.model_dump() for item in payload.assertions],
             error=exc.outcome,
         )
         run_report["feedback"] = decide_follow_up(
@@ -341,6 +376,7 @@ async def execute_candidate(
         response_headers=result["headers"],
         response_body=result["body"],
         expected_status_code=payload.expected_status_code,
+        user_assertions=[item.model_dump() for item in payload.assertions],
     )
     run_report["feedback"] = decide_follow_up(
         outcome=result["outcome"],
@@ -382,6 +418,7 @@ def _candidate_run_report(
     response_headers: dict[str, str],
     response_body: Any,
     expected_status_code: int | None,
+    user_assertions: list[dict[str, Any]] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     assertions = []
@@ -394,6 +431,15 @@ def _candidate_run_report(
                 "passed": status_code == expected_status_code,
             }
         )
+    assertions.extend(
+        _evaluate_candidate_assertion(
+            assertion,
+            status_code=status_code,
+            response_headers=response_headers,
+            response_body=response_body,
+        )
+        for assertion in user_assertions or []
+    )
     declared_responses = operation.get("responses", {})
     status_text = str(status_code) if status_code is not None else ""
     status_family = f"{status_text[:1]}XX" if status_text else ""
@@ -501,6 +547,82 @@ def _candidate_run_report(
         ),
     }
     return report
+
+
+def _evaluate_candidate_assertion(
+    assertion: dict[str, Any],
+    *,
+    status_code: int | None,
+    response_headers: dict[str, str],
+    response_body: Any,
+) -> dict[str, Any]:
+    kind = assertion["kind"]
+    if status_code is None:
+        return {"kind": kind, "passed": None, "evaluated": False}
+    if kind == "header_equals":
+        name = assertion["name"].lower()
+        actual = response_headers.get(name)
+        return {
+            "kind": kind,
+            "name": name,
+            "expected": assertion["expected"],
+            "actual": actual,
+            "passed": actual == assertion["expected"],
+        }
+
+    pointer = assertion["pointer"]
+    value: Any = response_body
+    for token in pointer[1:].split("/"):
+        token = token.replace("~1", "/").replace("~0", "~")
+        if isinstance(value, dict) and token in value:
+            value = value[token]
+        elif isinstance(value, list) and token.isdecimal() and int(token) < len(value):
+            value = value[int(token)]
+        else:
+            value = _MISSING_ASSERTION_VALUE
+            break
+    exists = value is not _MISSING_ASSERTION_VALUE
+    result = {"kind": kind, "pointer": pointer, "actual_present": exists}
+    if kind == "json_pointer_exists":
+        result["passed"] = exists
+        return result
+    expected_type = assertion["expected_type"]
+    actual_type = _json_value_type(value) if exists else None
+    if expected_type == "integer":
+        passed = isinstance(value, int) and not isinstance(value, bool)
+    elif expected_type == "number":
+        passed = isinstance(value, (int, float)) and not isinstance(value, bool)
+    else:
+        passed = actual_type == expected_type
+    result.update(
+        {
+            "expected_type": expected_type,
+            "actual_type": actual_type,
+            "passed": passed if exists else False,
+        }
+    )
+    return result
+
+
+def _json_value_type(value: Any) -> str:
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, int):
+        return "integer"
+    if isinstance(value, float):
+        return "number"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, list):
+        return "array"
+    if isinstance(value, dict):
+        return "object"
+    return "unknown"
+
+
+_MISSING_ASSERTION_VALUE = object()
 
 
 def _response_schema(content: Any, actual_type: str) -> dict[str, Any] | None:
@@ -769,11 +891,7 @@ def _execution_report_markdown(report: dict[str, Any]) -> str:
         "",
         "## Assertions",
     ]
-    lines.extend(
-        f"- {assertion['kind']}: expected `{assertion['expected']}`, "
-        f"observed `{assertion['actual']}`, passed `{assertion['passed']}`"
-        for assertion in report["assertions"]
-    )
+    lines.extend(_assertion_markdown(assertion) for assertion in report["assertions"])
     lines.append("\n## Contract observations")
     lines.extend(
         f"- {finding['kind']} at status `{finding.get('status_code', execution['status_code'])}`; "
@@ -913,6 +1031,26 @@ def _to_markdown(record: dict[str, Any]) -> str:
                 ]
             )
     return "\n".join(lines) + "\n"
+
+
+def _assertion_markdown(assertion: dict[str, Any]) -> str:
+    if assertion["kind"] == "status_code":
+        detail = f"expected `{assertion['expected']}`, observed `{assertion['actual']}`"
+    elif assertion["kind"] == "header_equals":
+        detail = (
+            f"header `{assertion['name']}` expected `{assertion['expected']}`, "
+            f"observed `{assertion['actual']}`"
+        )
+    else:
+        detail = f"pointer `{assertion['pointer']}`"
+        if "expected_type" in assertion:
+            detail += (
+                f" expected type `{assertion['expected_type']}`, "
+                f"observed `{assertion['actual_type']}`"
+            )
+        else:
+            detail += f" present `{assertion['actual_present']}`"
+    return f"- {assertion['kind']}: {detail}, passed `{assertion['passed']}`"
 
 
 def _to_csv(record: dict[str, Any]) -> str:

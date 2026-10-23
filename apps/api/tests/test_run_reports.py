@@ -1,5 +1,10 @@
+import pytest
+from pydantic import ValidationError
+
 from app.modules.test_generation.router import (
+    CandidateAssertionInput,
     _candidate_run_report,
+    _evaluate_candidate_assertion,
     _execution_report_markdown,
     _response_schema_mismatches,
 )
@@ -83,3 +88,36 @@ def test_candidate_report_records_schema_paths_without_persisting_body_values() 
     assert "$/id" in markdown
     assert "Feedback decision" in markdown
     assert "candidate-2" in markdown
+
+
+def test_user_json_assertions_record_only_type_and_presence_not_response_values() -> None:
+    assertion = CandidateAssertionInput.model_validate(
+        {"kind": "json_pointer_type", "pointer": "/account/id", "expected_type": "integer"}
+    )
+    result = _evaluate_candidate_assertion(
+        assertion.model_dump(),
+        status_code=200,
+        response_headers={},
+        response_body={"account": {"id": "private-account-123"}},
+    )
+    assert result["passed"] is False
+    assert result["actual_type"] == "string"
+    assert "private-account-123" not in str(result)
+
+
+def test_header_assertion_is_limited_to_allowlisted_response_headers() -> None:
+    assertion = CandidateAssertionInput.model_validate(
+        {"kind": "header_equals", "name": "content-type", "expected": "application/json"}
+    )
+    result = _evaluate_candidate_assertion(
+        assertion.model_dump(),
+        status_code=200,
+        response_headers={"content-type": "application/json"},
+        response_body=None,
+    )
+    assert result["passed"] is True
+
+    with pytest.raises(ValidationError):
+        CandidateAssertionInput.model_validate(
+            {"kind": "header_equals", "name": "set-cookie", "expected": "secret"}
+        )

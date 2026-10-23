@@ -224,11 +224,13 @@ def test_candidate_execution_applies_boundary_and_persists_metadata(
             "query_parameters": {"limit": 10},
             "path_parameters": {},
             "expected_status_code": 200,
+            "assertions": [{"kind": "json_pointer_exists", "pointer": "/items"}],
         },
     )
     assert response.status_code == 201
     assert response.json()["body"] == {"items": []}
     assert response.json()["run_report"]["assertions"][0]["passed"] is True
+    assert response.json()["run_report"]["assertions"][1]["passed"] is True
     assert mocked_execute.await_args.kwargs["url"] == "http://localhost:9000/items?limit=0"
     history = client.get(f"/api/v1/projects/{project['id']}/executions")
     assert history.json()[0]["status_code"] == 200
