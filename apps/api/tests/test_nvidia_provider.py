@@ -104,7 +104,7 @@ def test_generate_wraps_provider_errors() -> None:
 
     with pytest.raises(
         LLMProviderError,
-        match="could not complete the request",
+        match="could not complete the generation request",
     ):
         provider.generate(make_request())
 

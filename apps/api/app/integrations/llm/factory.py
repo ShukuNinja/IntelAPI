@@ -18,11 +18,9 @@ def create_llm_provider(
     if selected_provider == "nvidia":
         api_key = configured_settings.nvidia_api_key
         selected_model = model_name or configured_settings.nvidia_model
-        provider_class = NVIDIAProvider
     elif selected_provider == "groq":
         api_key = configured_settings.groq_api_key
         selected_model = model_name or configured_settings.groq_model
-        provider_class = GroqProvider
     else:
         raise ValueError("Unsupported LLM provider.")
 
@@ -33,10 +31,9 @@ def create_llm_provider(
     if not secret:
         return None
 
-    return provider_class(
-        api_key=secret,
-        model=selected_model,
-    )
+    if selected_provider == "nvidia":
+        return NVIDIAProvider(api_key=secret, model=selected_model)
+    return GroqProvider(api_key=secret, model=selected_model)
 
 
 def get_llm_provider_options(settings: Settings | None = None) -> dict[str, object]:

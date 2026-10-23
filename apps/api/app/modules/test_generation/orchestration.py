@@ -59,8 +59,26 @@ def generate_candidates_with_llm(
 
     try:
         proposed: list[TestCandidate] = []
+        rejected_responses: list[dict[str, str]] = []
         for operation in operations:
-            proposed.extend(generate_llm_candidates(operation, configured_provider))
+            operation_rejections: list[dict[str, str]] = []
+            proposed.extend(
+                generate_llm_candidates(
+                    operation,
+                    configured_provider,
+                    on_rejection=operation_rejections.append,
+                )
+            )
+            rejected_responses.extend(
+                item for item in operation_rejections if item.get("kind") == "invalid_response"
+            )
+
+        if rejected_responses:
+            return CandidateGenerationResult(
+                candidates=baseline,
+                llm_status=LLMGenerationStatus.FAILED,
+                llm_error="LLM candidate generation failed: invalid JSON response",
+            )
 
         merged = deduplicate_candidates([*baseline, *proposed])
     except Exception as exc:

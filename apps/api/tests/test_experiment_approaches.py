@@ -22,8 +22,8 @@ class FakeProvider:
     def __init__(self, text: str | None = None) -> None:
         self.requests: list[LLMRequest] = []
         self.text = text or (
-            '[{"category":"positive","title":"List items",'
-            '"parameters":{},"body":null,"rationale":"Checks the list operation."}]'
+            '{"candidates":[{"category":"positive","title":"List items",'
+            '"parameters_json":"{}","body_json":null,"rationale":"Checks the list operation."}]}'
         )
 
     def generate(self, request: LLMRequest) -> LLMResponse:

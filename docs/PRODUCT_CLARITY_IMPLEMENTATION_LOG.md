@@ -9,8 +9,8 @@
 
 ## In progress
 - [ ] Add the report setup/run flow simplifications and compact visual summary.
-- [ ] Verify frontend typecheck/build and focused backend tests; fix any issues.
-- [ ] Update this log with verification results and remaining limitations.
+- [x] Verify frontend, backend, provider integration, and runtime health; fix issues found.
+- [x] Record verification results and remaining limitations in this log.
 
 ## Known limitations
 - Provider structured-output support varies by model. Unsupported model/provider combinations should surface as provider errors; application parsing and candidate validation remain the safety boundary.
@@ -30,10 +30,33 @@
 - `npm run typecheck --prefix apps/web` — passed.
 - `npm run build --prefix apps/web` — passed.
 - `git diff --check` — passed; Git displayed only line-ending normalization notices.
-- Focused pytest suite — not run: host Python has no pytest installed, and Docker API access was denied by the environment.
+- Focused pytest suite — later run in the API container; 38 passed.
 
 ### Remaining work
 - Add compact pictographic report visualization and a guided, lower-friction setup/run flow.
-- Run backend tests in an environment with project API dependencies available and confirm real configured-provider structured-output compatibility.
 - Inspect the UI in the browser at narrow and wide widths.
 - Final `npm run typecheck --prefix apps/web` after report-guide styling — passed.
+
+## 2026-10-23 — Groq provider 400 audit and smoke verification
+
+- Captured a live Groq response using the configured `openai/gpt-oss-120b` key without printing or persisting the credential. A deliberately small 100-token diagnostic returned HTTP 400 with provider code `json_validate_failed`, message `Failed to validate JSON. Please adjust your prompt. See 'failed_generation' for more details.`, and an empty `failed_generation` value.
+- Retried with the application's 1,200-token generation budget and corrected strict schema: Groq returned valid schema-conforming JSON (526 total tokens in the direct request).
+- Exercised the complete app generation path against a synthetic OpenAPI `GET /health` operation: Groq returned five candidates and application parsing/domain validation accepted them.
+- Repaired the strict schema contract: it now has a closed object root, schema objects disallow undeclared properties, and arbitrary OpenAPI parameter/body objects are encoded as JSON strings and parsed/validated locally. The app asks for the matching `{ "candidates": [...] }` envelope.
+- Groq HTTP errors now retain the provider's bounded error code/message after credential scrubbing. `json_validate_failed`, request/schema 400s, and `blocked_api_access` spend-limit 400s are distinguished in run diagnostics.
+- Smoke testing exposed and fixed two related correctness issues: the legacy preview marked malformed JSON as LLM success; deterministic-only approaches reported an LLM candidate-validity score. Both now report accurate outcomes.
+
+### Smoke verification
+- Focused provider/candidate/approach tests — 38 passed.
+- Full API pytest suite — 253 passed, 6 upstream/framework deprecation warnings.
+- Backend Ruff — passed.
+- Backend mypy — passed for 107 source files.
+- Frontend typecheck and production build — passed.
+- Frontend ESLint — passed with 3 existing Fast Refresh warnings.
+- Live provider candidate-generation request — 5 valid candidates.
+- Compose API, worker, database, and web containers — running; API and database healthy.
+- `GET http://localhost:8000/health/ready` — returned `{"status":"ready"}`.
+- `GET http://localhost:5173` — returned HTTP 200.
+
+### Diagnostic limitation
+- The screenshot's original historical response body was not retained by the previous adapter, so that exact provider message cannot be reconstructed. The captured live reproduction proves the `json_validate_failed` path; with the app's real token budget and repaired schema, the same provider/model succeeds.

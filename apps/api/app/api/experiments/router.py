@@ -203,11 +203,15 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
     persisted_count = len(candidates)
     llm_status = run.generation_metadata.get("llm_status")
     stored_valid_count = run.generation_metadata.get("valid_candidate_count")
+    llm_was_used = bool(run.generation_metadata.get("llm_request_attempted")) or (
+        llm_status in {"succeeded", "empty", "failed"}
+        and run.generation_metadata.get("mode") != "deterministic_fallback"
+    )
     valid_candidate_count = int(
         stored_valid_count
         if stored_valid_count is not None
         else 0
-        if llm_status == "failed"
+        if llm_status == "failed" or not llm_was_used
         else generated_count or persisted_count
     )
     rejected_candidate_count = int(run.generation_metadata.get("rejected_candidate_count", 0))
@@ -215,13 +219,15 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
     return {
         "candidate_validity_rate": _metric(
             round(valid_candidate_count / (valid_candidate_count + rejected_candidate_count), 4)
-            if valid_candidate_count + rejected_candidate_count
+            if valid_candidate_count + rejected_candidate_count and llm_was_used
             else None,
             None
             if valid_candidate_count + rejected_candidate_count
             else (
                 "LLM generation failed before any candidate proposal could be validated."
                 if llm_status == "failed"
+                else "LLM generation was not used for this approach."
+                if not llm_was_used
                 else "No generated or rejected candidate proposals were recorded."
             ),
         ),
@@ -262,7 +268,8 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
                 "LLM generation failed before token usage was returned."
                 if run.generation_metadata.get("llm_status") == "failed"
                 else "LLM was not used for this approach."
-                if run.generation_metadata.get("llm_status") in {"not_used", "disabled", "not_configured"}
+                if run.generation_metadata.get("llm_status")
+                in {"not_used", "disabled", "not_configured"}
                 else "Provider did not return complete token usage for this run."
             )
             if run.generation_metadata.get("llm_token_usage") is None
@@ -380,6 +387,8 @@ def create_experiment(
         operation_id_to_key[operation_row.id] = normalized.operation_key
         normalized_by_id[operation_row.id] = normalized
     for fact in fact_rows:
+        if fact.operation_id is None:
+            continue
         operation_key = operation_id_to_key.get(fact.operation_id)
         if operation_key is None:
             continue
@@ -534,8 +543,7 @@ def create_experiment(
                         else len(generation.candidates)
                     ),
                     "rejected_candidate_count": sum(
-                        item.get("kind") == "candidate"
-                        for item in generation.rejected_candidates
+                        item.get("kind") == "candidate" for item in generation.rejected_candidates
                     ),
                     "rejected_candidates": list(generation.rejected_candidates),
                     "requested_llm_provider": payload.llm_provider,

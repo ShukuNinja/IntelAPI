@@ -160,7 +160,7 @@ def test_malformed_output_returns_baseline_and_failure_status() -> None:
 
     assert result.candidates == generate_candidates(operations)
     assert result.llm_status is LLMGenerationStatus.FAILED
-    assert result.llm_error == "LLM candidate generation failed: LLMProposalError"
+    assert result.llm_error == "LLM candidate generation failed: invalid JSON response"
 
 
 def test_repeated_generation_is_stable() -> None:

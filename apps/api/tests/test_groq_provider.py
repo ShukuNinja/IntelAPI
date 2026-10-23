@@ -59,7 +59,63 @@ def test_groq_provider_sanitizes_errors() -> None:
     client.chat.completions.create.side_effect = RuntimeError("private provider response")
     provider = GroqProvider(api_key="private-test-key", model="test-model", client=client)
 
-    with pytest.raises(LLMProviderError, match="could not complete the request") as error:
+    with pytest.raises(
+        LLMProviderError, match="could not complete the generation request"
+    ) as error:
         provider.generate(request())
 
     assert "private provider response" not in str(error.value)
+
+
+def test_groq_provider_preserves_safe_http_400_reason() -> None:
+    class Provider400Error(Exception):
+        status_code = 400
+        code = "invalid_request_error"
+        body = {"error": {"code": "invalid_request_error", "message": "Invalid JSON schema."}}
+
+    client = Mock()
+    client.chat.completions.create.side_effect = Provider400Error()
+    provider = GroqProvider(api_key="test-key", model="test-model", client=client)
+
+    with pytest.raises(LLMProviderError, match="Invalid JSON schema") as error:
+        provider.generate(request())
+
+    assert error.value.code == "invalid_request"
+
+
+def test_groq_provider_maps_spend_limit_400_separately() -> None:
+    class SpendLimitError(Exception):
+        status_code = 400
+        code = "blocked_api_access"
+        body = {"error": {"code": "blocked_api_access", "message": "Spend limit reached."}}
+
+    client = Mock()
+    client.chat.completions.create.side_effect = SpendLimitError()
+    provider = GroqProvider(api_key="test-key", model="test-model", client=client)
+
+    with pytest.raises(LLMProviderError, match="spend limit") as error:
+        provider.generate(request())
+
+    assert error.value.code == "billing_limit_reached"
+
+
+def test_groq_provider_maps_generated_json_validation_error() -> None:
+    class JsonValidationError(Exception):
+        status_code = 400
+        code = "json_validate_failed"
+        body = {
+            "error": {
+                "code": "json_validate_failed",
+                "message": "Failed to validate JSON. Please adjust your prompt.",
+                "failed_generation": "",
+            }
+        }
+
+    client = Mock()
+    client.chat.completions.create.side_effect = JsonValidationError()
+    provider = GroqProvider(api_key="test-key", model="test-model", client=client)
+
+    with pytest.raises(LLMProviderError, match="could not validate its generated JSON") as error:
+        provider.generate(request())
+
+    assert error.value.code == "json_validate_failed"

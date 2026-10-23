@@ -6,7 +6,6 @@ from app.integrations.llm import LLMRequest, LLMResponse
 from app.modules.api_understanding.normalizer import normalize_operations
 from app.modules.api_understanding.parser import parse_openapi_document
 from app.modules.test_generation.llm_assisted import (
-    LLMProposalError,
     generate_llm_candidates,
 )
 
@@ -44,8 +43,8 @@ def _proposal(**overrides):
     proposal = {
         "category": "positive",
         "title": "List users",
-        "parameters": {},
-        "body": None,
+        "parameters_json": "{}",
+        "body_json": None,
         "rationale": "Checks the declared list-users operation.",
     }
     proposal.update(overrides)
@@ -62,6 +61,21 @@ def test_generates_valid_candidate_from_fake_provider() -> None:
     assert candidates[0].path == "/users"
     assert candidates[0].candidate_id
     assert len(provider.requests) == 1
+    assert provider.requests[0].json_schema["type"] == "object"
+
+
+def test_parses_closed_schema_envelope_and_json_encoded_values() -> None:
+    proposal = _proposal(
+        parameters_json="{}",
+        body_json='{"name":"Ada"}',
+    )
+    provider = FakeProvider(json.dumps({"candidates": [proposal]}))
+
+    candidates = generate_llm_candidates(_operation(), provider)
+
+    assert len(candidates) == 1
+    assert candidates[0].parameters == {}
+    assert candidates[0].body == {"name": "Ada"}
 
 
 @pytest.mark.parametrize(
@@ -72,15 +86,19 @@ def test_generates_valid_candidate_from_fake_provider() -> None:
         "[null]",
         json.dumps([_proposal(extra="unexpected")]),
         json.dumps([_proposal(category="unknown")]),
-        json.dumps([_proposal(parameters=[])]),
-        json.dumps([_proposal(parameters={"undocumented": "value"})]),
-        json.dumps([_proposal(body=[])]),
+        json.dumps([_proposal(parameters_json="[]")]),
+        json.dumps([_proposal(parameters_json='{"undocumented":"value"}')]),
+        json.dumps([_proposal(body_json="[]")]),
         json.dumps([_proposal(title="")]),
     ],
 )
 def test_rejects_malformed_or_invalid_proposals(response_text: str) -> None:
-    with pytest.raises(LLMProposalError):
-        generate_llm_candidates(_operation(), FakeProvider(response_text))
+    rejected: list[dict] = []
+    candidates = generate_llm_candidates(
+        _operation(), FakeProvider(response_text), on_rejection=rejected.append
+    )
+    assert not candidates
+    assert rejected
 
 
 def test_deduplicates_identical_proposals() -> None:
@@ -95,8 +113,9 @@ def test_deduplicates_identical_proposals() -> None:
 def test_rejects_response_above_size_limit() -> None:
     provider = FakeProvider(" " * (64 * 1024 + 1))
 
-    with pytest.raises(LLMProposalError, match="size limit"):
-        generate_llm_candidates(_operation(), provider)
+    rejected: list[dict] = []
+    assert not generate_llm_candidates(_operation(), provider, on_rejection=rejected.append)
+    assert "size limit" in rejected[0]["reason"]
 
 
 def test_prompt_contains_operation_context_and_execution_guardrail() -> None:
@@ -113,20 +132,22 @@ def test_prompt_contains_operation_context_and_execution_guardrail() -> None:
 def test_rejects_non_finite_json_numbers() -> None:
     provider = FakeProvider(
         '[{"category":"positive","title":"List users",'
-        '"parameters":{"limit":NaN},"body":null,'
+        '"parameters_json":"{\\"limit\\":NaN}","body_json":null,'
         '"rationale":"Checks list users."}]'
     )
 
-    with pytest.raises(LLMProposalError):
-        generate_llm_candidates(_operation(), provider)
+    rejected: list[dict] = []
+    assert not generate_llm_candidates(_operation(), provider, on_rejection=rejected.append)
+    assert rejected
 
 
 def test_rejects_excessively_nested_json() -> None:
     nested = "[" * 1100 + "]" * 1100
     provider = FakeProvider(nested)
 
-    with pytest.raises(LLMProposalError):
-        generate_llm_candidates(_operation(), provider)
+    rejected: list[dict] = []
+    assert not generate_llm_candidates(_operation(), provider, on_rejection=rejected.append)
+    assert rejected
 
 
 def test_wraps_unexpected_provider_exceptions() -> None:
