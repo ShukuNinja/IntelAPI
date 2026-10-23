@@ -108,8 +108,16 @@ def append_event(
         )
         or 0
     )
+    pending = sum(
+        1
+        for existing in db.new
+        if isinstance(existing, CampaignEvent) and existing.campaign_id == campaign_id
+    )
     event = CampaignEvent(
-        campaign_id=campaign_id, sequence_number=last + 1, event_type=event_type, payload=payload
+        campaign_id=campaign_id,
+        sequence_number=last + pending + 1,
+        event_type=event_type,
+        payload=payload,
     )
     db.add(event)
     return event

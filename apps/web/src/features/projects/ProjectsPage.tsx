@@ -1,6 +1,6 @@
 
 import { useCallback, useEffect, useState, type FormEvent } from 'react'
-import { Archive, FolderKanban, Pencil, Plus, RefreshCw } from 'lucide-react'
+import { FolderKanban, Pencil, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { PageHeader } from '../../components/ui/PageHeader'
@@ -103,9 +103,9 @@ export function ProjectsPage() {
     }
   }
 
-  async function handleArchive(project: Project) {
+  async function handleDelete(project: Project) {
     const confirmed = window.confirm(
-      `Archive "${project.name}"? It will disappear from the active project list.`,
+      `Delete "${project.name}" from active projects? Its saved records will remain archived.`,
     )
 
     if (!confirmed) return
@@ -113,14 +113,14 @@ export function ProjectsPage() {
     setError(null)
 
     try {
-      await projectService.archive(project.id)
+      await projectService.delete(project.id)
       setProjects((current) =>
         current.filter((item) => item.id !== project.id),
       )
       await refreshProjects()
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : 'Unable to archive the project.',
+        err instanceof Error ? err.message : 'Unable to delete the project.',
       )
     }
   }
@@ -251,11 +251,11 @@ export function ProjectsPage() {
                   <Button
                     size="sm"
                     variant="danger"
-                    onClick={() => void handleArchive(project)}
-                    aria-label={`Archive ${project.name}`}
+                    onClick={() => void handleDelete(project)}
+                    aria-label={`Delete ${project.name}`}
                   >
-                    <Archive size={14} />
-                    Archive
+                    <Trash2 size={14} />
+                    Delete
                   </Button>
                 </div>
               </article>

@@ -181,3 +181,18 @@ def archive_project(
     db.refresh(project)
 
     return ProjectRead.model_validate(project)
+
+
+@router.delete(
+    "/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_project(
+    project_id: UUID,
+    db: DbSession,
+    current_user: CurrentUser,
+) -> None:
+    """Remove a project from active workspaces while retaining its archived records."""
+    project = get_owned_project(db, project_id, current_user.id)
+    project.deleted_at = datetime.now(UTC)
+    db.commit()

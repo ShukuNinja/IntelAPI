@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BarChart3, Download, RefreshCw, Rocket } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -225,6 +226,7 @@ export function ExperimentWorkbenchPage() {
           <option value="">Choose a configured target</option>
           {environments.map(environment => <option key={environment.id} value={environment.id}>{environment.name} · {environment.base_url}</option>)}
         </select>
+        {!environments.length && <div className="notice notice--info"><div><strong>No target environments configured</strong><p>Create a project environment with a base URL, then return here to select it.</p><Link to="/environments">Create target environment</Link></div></div>}
         <fieldset className="experiment-approaches"><legend>Approaches</legend>{approachOrder.map(approach => <label className="environment-card" key={approach}><input type="checkbox" checked={selectedApproaches.includes(approach)} onChange={event => setSelectedApproaches(current => event.target.checked ? [...current, approach] : current.filter(item => item !== approach))} /><span className="environment-card__body"><strong>{approachDetails[approach].title}</strong><small>{approachDetails[approach].description}</small></span></label>)}</fieldset>
         <fieldset className="experiment-approaches"><legend>OpenAPI operations ({selectedOperations.length} selected)</legend><div className="resource-list">{operations.map((operation: ApiOperation) => <label className="environment-card" key={operation.id}><input type="checkbox" checked={selectedOperations.includes(operation.id)} onChange={event => setSelectedOperations(current => event.target.checked ? [...current, operation.id] : current.filter(id => id !== operation.id))} /><span className="environment-card__body"><strong>{operation.method.toUpperCase()} {operation.path_template}</strong><small>{operation.summary || operation.operation_key}</small></span></label>)}</div></fieldset>
         <label className="environment-card"><input type="checkbox" checked={useLlm} onChange={event => setUseLlm(event.target.checked)} /><span className="environment-card__body"><strong>Allow configured LLM generation</strong><small>May send selected OpenAPI context and extracted facts to the server configured provider. Disabled runs use deterministic fallback candidates.</small></span></label>

@@ -53,4 +53,10 @@ export const projectService = {
       method: 'POST',
     })
   },
+
+  delete(projectId: string): Promise<void> {
+    return apiRequest<void>(`/v1/projects/${projectId}`, {
+      method: 'DELETE',
+    })
+  },
 }

@@ -273,3 +273,11 @@ For each subsequent milestone, append the date, changed capabilities/files, migr
 - Fixed stale candidate/provider test expectations and added Groq, factory, provider-options, and usage-metadata coverage.
 - Backend suite: 244 passed. Ruff and Python compilation passed. Frontend typecheck and production build passed; lint has three existing Fast Refresh warnings.
 - Authenticated browser walkthrough reached the live workbench and verified provider availability/model controls. No experiment was submitted because the selected BloodLink project has no configured target environment.
+
+### 2026-10-23 follow-up — Generic project, environment flow, and project deletion
+
+- Created the **Generic API Workbench** project and added project deletion in workspace management. The API soft-deletes the project from active lists while retaining its records; owner checks are covered by API tests.
+- Added a direct **Create target environment** link beside the experiment selector when no base-URL environments exist. Created generic read-only targets in the new project and confirmed they appear in the selector.
+- Imported the public HTTPBin OpenAPI 3.0 contract and ran all four approaches against its read-only `GET /get` endpoint. The persisted experiment completed with 3 candidates and 3 requests per approach; the comparison recorded 2 passed assertions, 0 failed assertions, and 1 inconclusive case per approach. LLM generation remained disabled, so the LLM baseline and semantic-assisted approaches used deterministic fallback.
+- The first live run exposed a campaign worker bug: selection and execution-start events generated the same sequence in one transaction. Event allocation now accounts for pending events, with a regression test.
+- Backend pytest: 247 passed, 6 deprecation warnings. Ruff passed. Frontend typecheck and production build passed; lint has the same 3 Fast Refresh warnings.

@@ -48,10 +48,15 @@ def _event(db: Session, campaign_id: UUID, event_type: str, payload: dict[str, o
         )
         or 0
     )
+    pending = sum(
+        1
+        for event in db.new
+        if isinstance(event, CampaignEvent) and event.campaign_id == campaign_id
+    )
     db.add(
         CampaignEvent(
             campaign_id=campaign_id,
-            sequence_number=sequence + 1,
+            sequence_number=sequence + pending + 1,
             event_type=event_type,
             payload=payload,
         )

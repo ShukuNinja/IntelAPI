@@ -46,6 +46,38 @@ def _saved_request(client, project_id: str) -> str:
     return response.json()["id"]
 
 
+def test_worker_events_reserve_distinct_sequences_before_flush(authenticated_client):
+    from sqlalchemy import select
+
+    import app.worker as worker_module
+    from app.db.session import get_db
+    from app.main import app
+    from app.models.campaign import CampaignEvent
+
+    client = authenticated_client
+    project_id = _project(client)
+    request_id = _saved_request(client, project_id)
+    queued = client.post(
+        f"/api/v1/projects/{project_id}/campaigns",
+        json={"name": "Event ordering regression", "saved_request_ids": [request_id]},
+    )
+    assert queued.status_code == 202, queued.text
+    campaign_id = UUID(queued.json()["id"])
+    db_generator = app.dependency_overrides[get_db]()
+    db = next(db_generator)
+
+    worker_module._event(db, campaign_id, "candidate_selected", {})
+    worker_module._event(db, campaign_id, "execution_started", {})
+    db.flush()
+
+    events = db.scalars(
+        select(CampaignEvent)
+        .where(CampaignEvent.campaign_id == campaign_id)
+        .order_by(CampaignEvent.sequence_number)
+    ).all()
+    assert [event.sequence_number for event in events] == [1, 2, 3]
+
+
 def test_import_specification_persists_operations_facts_and_preview(authenticated_client):
     client = authenticated_client
     project_id = _project(client)
