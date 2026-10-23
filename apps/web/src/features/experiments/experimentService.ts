@@ -55,19 +55,19 @@ export interface ExperimentComparison {
 export const approachDetails: Record<ExperimentApproach, { title: string; description: string }> = {
   llm_baseline: {
     title: 'LLM baseline',
-    description: 'Generate from the OpenAPI operation without semantic facts or execution feedback.',
+    description: 'Generate with the selected LLM from the OpenAPI operation, without semantic facts or execution feedback.',
   },
   semantic_assisted: {
     title: 'Semantic assisted',
-    description: 'Add extracted, source-linked API facts to the same generation prompt.',
+    description: 'Generate with the selected LLM and add extracted, source-linked API facts to the prompt.',
   },
   feedback_guided: {
     title: 'Feedback guided',
-    description: 'Use previous execution outcomes to choose the next candidate from the pool.',
+    description: 'Choose candidates from the deterministic pool using previous execution outcomes; does not call an LLM.',
   },
   evidence_backed: {
     title: 'Evidence backed',
-    description: 'Prioritize operation and category coverage using recorded execution evidence.',
+    description: 'Prioritize operation and category coverage from a deterministic pool; does not call an LLM.',
   },
 }
 

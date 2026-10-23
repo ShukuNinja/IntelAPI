@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from app.integrations.llm import LLMProvider, LLMResponse, create_llm_provider
+from app.integrations.llm import LLMProvider, LLMProviderError, LLMResponse, create_llm_provider
 from app.modules.api_understanding.models import NormalizedOperation
 from app.modules.test_generation.deduplication import deduplicate_candidates
 from app.modules.test_generation.generator import generate_candidates
@@ -36,6 +36,9 @@ class ApproachGenerationResult:
     llm_provider: str | None = None
     llm_model: str | None = None
     llm_token_usage: int | None = None
+    rejected_candidates: tuple[dict[str, Any], ...] = ()
+    valid_candidate_count: int | None = None
+    llm_request_attempted: bool = False
 
 
 POLICY_VERSIONS = {
@@ -96,6 +99,7 @@ def generate_for_approach(
             "LLM generation is disabled for this experiment.",
             "disabled",
         )
+    rejected_candidates: list[dict[str, Any]] = []
     try:
         configured_provider = (
             provider
@@ -133,15 +137,30 @@ def generate_for_approach(
                     configured_provider,
                     semantic_facts=facts,
                     on_response=responses.append,
+                    on_rejection=rejected_candidates.append,
                 )
             )
-    except Exception as exc:
+    except LLMProviderError as exc:
         return _fallback_result(
             approach,
             fallback,
             semantic_count,
-            f"LLM candidate generation failed: {type(exc).__name__}.",
+            f"LLM provider error [{exc.code}]: {exc} Deterministic candidates were used.",
             "failed",
+            rejected_candidates,
+            len(proposals),
+            llm_request_attempted=True,
+        )
+    except Exception:
+        return _fallback_result(
+            approach,
+            fallback,
+            semantic_count,
+            "LLM candidate generation failed unexpectedly. Deterministic candidates were used.",
+            "failed",
+            rejected_candidates,
+            len(proposals),
+            llm_request_attempted=True,
         )
 
     unique_proposals = deduplicate_candidates(proposals)
@@ -152,6 +171,9 @@ def generate_for_approach(
             semantic_count,
             "The LLM returned no candidates; deterministic candidates were used.",
             "empty",
+            rejected_candidates,
+            len(proposals),
+            llm_request_attempted=True,
         )
 
     return ApproachGenerationResult(
@@ -179,6 +201,9 @@ def generate_for_approach(
             if responses and all(response.total_tokens is not None for response in responses)
             else None
         ),
+        rejected_candidates=tuple(rejected_candidates),
+        valid_candidate_count=len(unique_proposals),
+        llm_request_attempted=True,
     )
 
 
@@ -188,6 +213,9 @@ def _fallback_result(
     semantic_fact_count: int,
     warning: str,
     llm_status: str,
+    rejected_candidates: Sequence[dict[str, Any]] = (),
+    valid_candidate_count: int | None = None,
+    llm_request_attempted: bool = False,
 ) -> ApproachGenerationResult:
     return ApproachGenerationResult(
         approach=approach,
@@ -197,4 +225,7 @@ def _fallback_result(
         llm_status=llm_status,
         warning=warning,
         semantic_fact_count=semantic_fact_count,
+        rejected_candidates=tuple(rejected_candidates),
+        valid_candidate_count=valid_candidate_count,
+        llm_request_attempted=llm_request_attempted,
     )

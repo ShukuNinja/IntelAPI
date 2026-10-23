@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     nvidia_api_key: SecretStr | None = None
     nvidia_model: str = Field(default="openai/gpt-oss-20b", min_length=1, max_length=160)
     groq_api_key: SecretStr | None = None
-    groq_model: str = Field(default="llama-3.3-70b-versatile", min_length=1, max_length=160)
+    groq_model: str = Field(default="openai/gpt-oss-120b", min_length=1, max_length=160)
 
     app_name: str = "API Intelligence Platform API"
     app_env: str = "development"

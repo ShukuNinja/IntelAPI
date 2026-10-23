@@ -239,7 +239,22 @@ export function ExperimentWorkbenchPage() {
       {experiments.length ? <div className="resource-list">{experiments.map(experiment => <button type="button" className={`experiment-history-item${selectedExperimentId === experiment.id ? ' experiment-history-item--active' : ''}`} key={experiment.id} onClick={() => setSelectedExperimentId(experiment.id)}><span><strong>{experiment.name}</strong><small>{new Date(experiment.created_at).toLocaleString()} · {experiment.runs.length} approaches</small></span><Badge tone={tone(experiment.state)}>{experiment.state}</Badge></button>)}</div> : <EmptyState title="No experiments yet" description="Select an API and approaches above to create the first persisted comparison." />}
     </Panel>
     {comparison && <Panel title={`Comparison · ${comparison.experiment.name}`} subtitle={`Specification ${comparison.experiment.configuration.specification_sha256 ?? ''} · ${comparison.experiment.state}`} action={<Button size="sm" onClick={() => void exportComparison()}><Download size={14} /> Export JSON</Button>}>
-      <div className="experiment-run-grid">{comparison.experiment.runs.map(run => <article className="experiment-run-card" key={run.id}><div><strong>{approachDetails[run.approach].title}</strong><Badge tone={tone(run.state)}>{run.state}</Badge>{(run.state === 'queued' || run.state === 'running') && <Button size="sm" disabled={busy} onClick={() => void cancelRun(run)}>Cancel run</Button>}</div><p>{run.candidate_count} candidates · {run.execution_count} executed</p><small>{String(run.generation_metadata.mode ?? 'generation pending')} · {String(run.generation_metadata.policy_version ?? '')}</small>{typeof run.generation_metadata.warning === 'string' && <small className="experiment-warning">{run.generation_metadata.warning}</small>}</article>)}</div>
+      <div className="experiment-run-grid">{comparison.experiment.runs.map(run => {
+        const rejected = Array.isArray(run.generation_metadata.rejected_candidates)
+          ? run.generation_metadata.rejected_candidates as Array<{ kind?: string; index?: number; reason?: string; proposal?: string }>
+          : []
+        const validCount = Number(run.generation_metadata.valid_candidate_count ?? run.candidate_count)
+        const provider = String(run.generation_metadata.llm_provider ?? run.generation_metadata.requested_llm_provider ?? '—')
+        const model = String(run.generation_metadata.llm_model ?? run.generation_metadata.requested_llm_model ?? '')
+        return <article className="experiment-run-card" key={run.id}>
+          <div><strong>{approachDetails[run.approach].title}</strong><Badge tone={tone(run.state)}>{run.state}</Badge>{(run.state === 'queued' || run.state === 'running') && <Button size="sm" disabled={busy} onClick={() => void cancelRun(run)}>Cancel run</Button>}</div>
+          <p>{run.candidate_count} saved candidates · {run.execution_count} executed</p>
+          <small>{String(run.generation_metadata.mode ?? 'generation pending')} · {String(run.generation_metadata.policy_version ?? '')}</small>
+          <small>{provider}{model ? ` · ${model}` : ''} · {validCount} valid · {rejected.filter(item => item.kind === 'candidate').length} rejected</small>
+          {typeof run.generation_metadata.warning === 'string' && <small className="experiment-warning">{run.generation_metadata.warning}</small>}
+          {rejected.length > 0 && <details className="experiment-rejected"><summary>Rejected generation output ({rejected.length})</summary>{rejected.map((item, index) => <div key={`${run.id}-rejected-${index}`}><p>{item.kind === 'candidate' && item.index !== undefined ? `Proposal ${item.index + 1}: ` : ''}{item.reason ?? 'Rejected by candidate validation.'}</p>{item.proposal && <pre className="code-preview">{item.proposal}</pre>}</div>)}</details>}
+        </article>
+      })}</div>
       {metricKeys.length ? <div className="table-wrap"><table><thead><tr><th>MEASURE</th>{approachOrder.filter(approach => metrics[approach]).map(approach => <th key={approach}>{approachDetails[approach].title}</th>)}</tr></thead><tbody>{metricKeys.map(key => <tr key={key}><th>{key.replaceAll('_', ' ')}</th>{approachOrder.filter(approach => metrics[approach]).map(approach => { const value = metrics[approach][key]; return <td key={approach} title={metricReason(value) ?? undefined}>{metricText(value)}{metricReason(value) && <small className="metric-reason">{metricReason(value)}</small>}</td> })}</tr>)}</tbody></table></div> : <EmptyState title="Comparison is being prepared" description="Metrics load from persisted run, execution, assertion, and finding records." />}
       <div className="resource-list">{comparison.experiment.runs.map(run => {
         const detail = inspections[run.campaign_id]

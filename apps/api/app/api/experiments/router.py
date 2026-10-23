@@ -180,12 +180,29 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
     confirmed_count = len(finding_keys)
     generated_count = run.generation_metadata.get("generated_candidate_count")
     persisted_count = len(candidates)
+    llm_status = run.generation_metadata.get("llm_status")
+    stored_valid_count = run.generation_metadata.get("valid_candidate_count")
+    valid_candidate_count = int(
+        stored_valid_count
+        if stored_valid_count is not None
+        else 0
+        if llm_status == "failed"
+        else generated_count or persisted_count
+    )
+    rejected_candidate_count = int(run.generation_metadata.get("rejected_candidate_count", 0))
 
     return {
         "candidate_validity_rate": _metric(
-            None,
-            "Rejected candidates are not persisted yet, so the generated-candidate "
-            "denominator is unavailable.",
+            round(valid_candidate_count / (valid_candidate_count + rejected_candidate_count), 4)
+            if valid_candidate_count + rejected_candidate_count
+            else None,
+            None
+            if valid_candidate_count + rejected_candidate_count
+            else (
+                "LLM generation failed before any candidate proposal could be validated."
+                if llm_status == "failed"
+                else "No generated or rejected candidate proposals were recorded."
+            ),
         ),
         "unique_candidate_count": _metric(persisted_count),
         "generated_candidate_count": _metric(generated_count),
@@ -220,12 +237,23 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
         "execution_duration_ms": _metric(duration_ms),
         "llm_token_usage": _metric(
             run.generation_metadata.get("llm_token_usage"),
-            "Provider did not return complete token usage for this run."
+            (
+                "LLM generation failed before token usage was returned."
+                if run.generation_metadata.get("llm_status") == "failed"
+                else "LLM was not used for this approach."
+                if run.generation_metadata.get("llm_status") in {"not_used", "disabled", "not_configured"}
+                else "Provider did not return complete token usage for this run."
+            )
             if run.generation_metadata.get("llm_token_usage") is None
             else None,
         ),
         "estimated_provider_cost": _metric(
-            None, "Provider pricing is not maintained, so cost cannot be estimated."
+            None,
+            "LLM generation failed before provider usage was returned."
+            if llm_status == "failed"
+            else "LLM was not used for this approach."
+            if llm_status in {"not_used", "disabled", "not_configured"}
+            else "Provider pricing is not maintained, so cost cannot be estimated.",
         ),
         "diagnosis_accuracy": _metric(None, "No ground-truth failure labels are recorded."),
         "reproducibility_rate": _metric(
@@ -470,14 +498,27 @@ def create_experiment(
                     "llm_status": generation.llm_status,
                     "warning": generation.warning,
                     "semantic_fact_count": generation.semantic_fact_count,
-                    "semantic_facts_supplied_to_model": generation.generation_mode == "llm"
+                    "semantic_facts_supplied_to_model": generation.llm_request_attempted
                     and approach is GenerationApproach.SEMANTIC_ASSISTED,
+                    "llm_request_attempted": generation.llm_request_attempted,
                     "llm_provider": generation.llm_provider,
                     "llm_model": generation.llm_model,
                     "llm_token_usage": generation.llm_token_usage,
                     "generated_candidate_count": len(generation.candidates),
                     "persisted_candidate_count": case_limit,
                     "generation_duration_ms": generation_duration_ms,
+                    "valid_candidate_count": (
+                        generation.valid_candidate_count
+                        if generation.valid_candidate_count is not None
+                        else len(generation.candidates)
+                    ),
+                    "rejected_candidate_count": sum(
+                        item.get("kind") == "candidate"
+                        for item in generation.rejected_candidates
+                    ),
+                    "rejected_candidates": list(generation.rejected_candidates),
+                    "requested_llm_provider": payload.llm_provider,
+                    "requested_llm_model": payload.llm_model,
                 },
             )
         )

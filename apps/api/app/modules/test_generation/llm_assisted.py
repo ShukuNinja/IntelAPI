@@ -248,6 +248,7 @@ def generate_llm_candidates(
     *,
     semantic_facts: Sequence[Mapping[str, Any]] = (),
     on_response: Callable[[LLMResponse], None] | None = None,
+    on_rejection: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[TestCandidate, ...]:
     """Request, validate, and deduplicate LLM proposals without executing them."""
     request = _build_request(operation, semantic_facts)
@@ -264,8 +265,35 @@ def generate_llm_candidates(
     if on_response is not None:
         on_response(response)
 
-    proposals = _parse_proposals(response.text)
+    try:
+        proposals = _parse_proposals(response.text)
+    except LLMProposalError as exc:
+        if on_rejection is not None:
+            on_rejection({"kind": "invalid_response", "reason": str(exc)[:300]})
+        return ()
 
-    candidates = tuple(_candidate_from_proposal(operation, proposal) for proposal in proposals)
+    accepted: list[TestCandidate] = []
+    for index, proposal in enumerate(proposals):
+        try:
+            candidate = _candidate_from_proposal(operation, proposal)
+            if any(
+                existing.candidate_id == candidate.candidate_id for existing in accepted
+            ):
+                raise LLMProposalError("Duplicate candidate proposal.")
+            accepted.append(candidate)
+        except LLMProposalError as exc:
+            if on_rejection is not None:
+                try:
+                    preview = json.dumps(
+                        proposal, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+                    )[:2000]
+                except (TypeError, ValueError):
+                    preview = "[proposal could not be serialized]"
+                on_rejection({
+                    "kind": "candidate",
+                    "index": index,
+                    "reason": str(exc)[:300],
+                    "proposal": preview,
+                })
 
-    return deduplicate_candidates(candidates)
+    return deduplicate_candidates(accepted)

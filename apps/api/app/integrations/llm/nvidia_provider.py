@@ -1,6 +1,7 @@
 """NVIDIA Build adapter using the OpenAI-compatible Python SDK."""
 
 import logging
+import re
 from typing import Any
 
 from app.integrations.llm.models import LLMRequest, LLMResponse
@@ -89,8 +90,25 @@ class NVIDIAProvider:
         except LLMProviderError:
             raise
         except Exception as exc:
-            logger.warning(
-                "NVIDIA generation failed: exception_type=%s",
-                type(exc).__name__,
-            )
-            raise LLMProviderError("The NVIDIA provider could not complete the request.") from exc
+            status_code = getattr(exc, "status_code", None)
+            provider_code = getattr(exc, "code", None)
+            provider_code = re.sub(r"[^a-zA-Z0-9_-]", "", provider_code)[:64] if isinstance(provider_code, str) else ""
+            if status_code == 401:
+                code, message = "authentication_failed", "NVIDIA rejected the API key. Check NVIDIA_API_KEY on the API service."
+            elif status_code == 403:
+                code, message = "access_denied", "NVIDIA denied access to this model or account. Check model access and account status."
+            elif status_code == 404 or provider_code in {"model_decommissioned", "model_not_found"}:
+                code, message = "model_unavailable", f"NVIDIA model '{self._model}' is unavailable. Choose an active model in the workbench."
+            elif status_code == 429:
+                code, message = "rate_limited", "NVIDIA rate limit or quota was reached. Check your plan and retry later."
+            elif status_code is not None and status_code >= 500:
+                code, message = "provider_unavailable", "NVIDIA is temporarily unavailable. Retry the experiment later."
+            elif type(exc).__name__ in {"APITimeoutError", "TimeoutError"}:
+                code, message = "provider_timeout", "NVIDIA did not respond before the request timed out. Retry the experiment."
+            elif type(exc).__name__ == "APIConnectionError":
+                code, message = "connection_failed", "The API service could not connect to NVIDIA. Check network access and retry."
+            else:
+                code = provider_code or "provider_request_failed"
+                message = f"NVIDIA rejected the request (HTTP {status_code}). Check the selected model and provider limits." if status_code else "NVIDIA could not complete the generation request. Check the API logs for its status code."
+            logger.warning("NVIDIA generation failed: status=%s code=%s", status_code, code)
+            raise LLMProviderError(message, code=code) from exc
