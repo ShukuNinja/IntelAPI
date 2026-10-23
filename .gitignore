@@ -2,6 +2,8 @@ node_modules/
 dist/
 apps/api/.venv/
 apps/api/__pycache__/
+__pycache__/
+*.py[cod]
 apps/api/.pytest_cache/
 apps/api/.mypy_cache/
 apps/api/.ruff_cache/
