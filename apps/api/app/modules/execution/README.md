@@ -19,8 +19,12 @@ safe error summary.
 
 ## Current limitations
 
-- No saved request collections, environment substitution, auth helper, assertion
-  evaluation, execution report export, or per-project request-rate budget yet.
+- Saved requests, collection-name grouping, and named environment variable
+  substitution are implemented in the project request workspace. Saved header
+  values and environment variables are stored in the local database without
+  encryption; do not store production secrets on a shared or untrusted machine.
+- No auth helper, response-body assertion evaluation, or per-project
+  request-rate budget yet. Candidate run report export is implemented.
 - Persistence tests use SQLite fixtures; PostgreSQL integration and restart
   persistence have not been verified in this environment.
 - Private network access is a server-wide opt-in, not a per-project allowlist.

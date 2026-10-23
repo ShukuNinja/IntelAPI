@@ -11,10 +11,11 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 - [x] Local single-user project and specification persistence endpoints, deduplication, reload endpoint, Alembic migration, and SQLite route tests. Migrations from an empty SQLite database passed; PostgreSQL runtime persistence is not verified.
 - [x] Explorer UI creates/selects a project, imports JSON/YAML files or pasted content, saves and reloads stored specifications/reports, browses actual operations, previews candidates, and downloads report exports. Frontend typecheck/lint/build pass.
 - [x] Shared outbound executor supports bounded HTTP/HTTPS requests, DNS destination validation and IP pinning, loopback development targets, denied private/reserved targets by default, disabled redirects/proxies, timeouts, response limits, and unsafe-method confirmation. Workspace displays real responses and project-scoped execution history; execution metadata migration added. A real loopback fixture request passed.
-- [ ] PostgreSQL-backed deployment verification, real authentication, saved requests, and cross-restart persistence.
+- [~] Project-scoped saved requests, named environments, collection grouping, CRUD routes, request-builder controls, and `{{variable}}` interpolation are implemented. Migration 0008 and route coverage are added; run-path HTTP integration remains unverified because the local TestClient portal hangs at startup.
+- [ ] PostgreSQL-backed deployment verification, real authentication, environment secret encryption/write-only responses, and cross-restart persistence.
 - [~] Safe spec URL/docs-UI discovery is implemented in the API Explorer with bounded standard-path probing, Swagger UI config parsing, explicit choice for multiple matches, shared outbound SSRF controls, and redacted persisted source URLs. `$ref` resolution policy reporting remains incomplete; the discovery route still needs a passing async integration check.
-- [~] Persisted candidates can now be run against an explicitly supplied base URL and baseline query/path/body values through the shared bounded executor; execution outcomes are recorded without storing credentials or response bodies. Candidate validation, feedback policy, response assertions, drift/readiness analyzers, and execution reports/exports remain incomplete.
-- [ ] Campaign, findings, health-check, collection, environment, and settings workflows connected to backend routes. Unsupported screens use explicit empty states instead of sample records.
+- [~] Persisted candidates can run against an explicitly supplied base URL and baseline query/path/body/header values through the shared bounded executor. Each run has a distinct persisted execution report with actual status/timing/headers, optional status assertion, non-confirming undocumented status/content-type observations, and JSON/Markdown/CSV export; reports can be reopened in Request History. Response bodies and credentials are not stored. Rich response assertions, candidate validation/deduplication state, feedback policy, and readiness/drift analysis remain incomplete.
+- [ ] Campaign, findings, health-check, dedicated collection CRUD, and settings workflows connected to backend routes. Collection grouping currently uses a saved-request name field; unsupported screens use explicit empty states instead of sample records.
 - [ ] Full E2E, Docker Compose, database restart persistence, security tests, and evaluation benchmarks.
 
 ## Verification
@@ -29,9 +30,9 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 - `docker compose config --services` — passed; services resolved as `db`, `api`, `web`.
 - `docker compose ps` — unavailable: Docker Desktop Linux engine is not running. PostgreSQL runtime persistence has not been verified.
 - `git diff --check` — passed.
-- Alembic `upgrade head` — passed against a fresh in-memory SQLite database including migration `0006`.
-- Latest frontend typecheck, lint, and production build — passed after connecting candidate execution controls.
-- The new discovery and source-URL changes pass Python syntax compilation and Ruff. Focused pytest invocations stalled before completing under the current local Python/async test runner, including a pre-existing async executor test; earlier 35-test, migration, and frontend checks were completed before these latest changes.
+- Alembic `upgrade head` — passed against a fresh in-memory SQLite database including migrations `0006` through `0008`.
+- Latest frontend typecheck, lint, and production build — passed after connecting candidate execution reports, request saving, and environment controls.
+- Current Ruff and Python compile checks passed. Focused pytest invocation still stalls before making an HTTP request: faulthandler shows Starlette TestClient waiting while starting AnyIO's Windows event-loop portal/socket pair; no latest route integration test result is available. Earlier 35-test suite passed before the current discovery, candidate report, and saved-resource changes.
 
 ## Git and environment
 

@@ -78,6 +78,7 @@ def parse_specification(document: Any) -> dict[str, Any]:
                         path_item.get("parameters", []), operation.get("parameters", [])
                     ),
                     "request_body": operation.get("requestBody", {}),
+                    "responses": operation.get("responses", {}),
                 }
             )
     return {

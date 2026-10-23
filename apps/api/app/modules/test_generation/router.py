@@ -14,7 +14,14 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.models import ApiSpecification, ExecutionRecord, GenerationReportRecord, Project, User
+from app.models import (
+    ApiSpecification,
+    ExecutionRecord,
+    ExecutionReportRecord,
+    GenerationReportRecord,
+    Project,
+    User,
+)
 from app.modules.api_understanding.service import generate_candidates, generate_generation_report
 from app.modules.execution.service import ExecutionError, execute_request
 from app.modules.projects.router import LOCAL_USER_SUB
@@ -33,6 +40,7 @@ class CandidateExecutionInput(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict, max_length=100)
     body: dict[str, Any] | list[Any] | None = None
     confirm_unsafe: bool = False
+    expected_status_code: int | None = Field(default=None, ge=100, le=599)
 
 
 def _project(db: Session, project_id: UUID) -> Project:
@@ -248,19 +256,43 @@ async def execute_candidate(
         )
         safe_snapshot["origin"] = result["origin"]
     except ExecutionError as exc:
+        completed_at = datetime.now(UTC)
+        execution_record = ExecutionRecord(
+            project_id=project.id,
+            outcome=exc.outcome,
+            request_snapshot=safe_snapshot,
+            started_at=started_at,
+            completed_at=completed_at,
+            error_summary=str(exc)[:500],
+        )
+        db.add(execution_record)
+        db.flush()
+        run_report = _candidate_run_report(
+            operation=operation,
+            candidate=candidate,
+            execution_id=str(execution_record.id),
+            method=operation["method"],
+            origin="blocked",
+            status_code=None,
+            elapsed_ms=None,
+            response_bytes=None,
+            response_headers={},
+            expected_status_code=payload.expected_status_code,
+            error=exc.outcome,
+        )
         db.add(
-            ExecutionRecord(
+            ExecutionReportRecord(
                 project_id=project.id,
-                outcome=exc.outcome,
-                request_snapshot=safe_snapshot,
-                started_at=started_at,
-                completed_at=datetime.now(UTC),
-                error_summary=str(exc)[:500],
+                specification_id=specification.id,
+                execution_id=execution_record.id,
+                candidate_id=candidate_id,
+                report=run_report,
             )
         )
         db.commit()
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    completed_at = datetime.now(UTC)
     record = ExecutionRecord(
         project_id=project.id,
         outcome=result["outcome"],
@@ -270,12 +302,291 @@ async def execute_candidate(
         response_headers=result["headers"],
         response_size_bytes=result["response_bytes"],
         started_at=started_at,
-        completed_at=datetime.now(UTC),
+        completed_at=completed_at,
     )
     db.add(record)
+    db.flush()
+    run_report = _candidate_run_report(
+        operation=operation,
+        candidate=candidate,
+        execution_id=str(record.id),
+        method=operation["method"],
+        origin=result["origin"],
+        status_code=result["status_code"],
+        elapsed_ms=result["elapsed_ms"],
+        response_bytes=result["response_bytes"],
+        response_headers=result["headers"],
+        expected_status_code=payload.expected_status_code,
+    )
+    report_record = ExecutionReportRecord(
+        project_id=project.id,
+        specification_id=specification.id,
+        execution_id=record.id,
+        candidate_id=candidate_id,
+        report=run_report,
+    )
+    db.add(report_record)
     db.commit()
     db.refresh(record)
-    return {**result, "id": str(record.id), "candidate_id": candidate_id}
+    db.refresh(report_record)
+    return {
+        **result,
+        "id": str(record.id),
+        "candidate_id": candidate_id,
+        "run_report": _execution_report_response(report_record),
+    }
+
+
+def _candidate_run_report(
+    *,
+    operation: dict[str, Any],
+    candidate: dict[str, Any],
+    execution_id: str,
+    method: str,
+    origin: str,
+    status_code: int | None,
+    elapsed_ms: int | None,
+    response_bytes: int | None,
+    response_headers: dict[str, str],
+    expected_status_code: int | None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    assertions = []
+    if expected_status_code is not None:
+        assertions.append(
+            {
+                "kind": "status_code",
+                "expected": expected_status_code,
+                "actual": status_code,
+                "passed": status_code == expected_status_code,
+            }
+        )
+    declared_responses = operation.get("responses", {})
+    status_text = str(status_code) if status_code is not None else ""
+    status_family = f"{status_text[:1]}XX" if status_text else ""
+    response_declared = (
+        status_code is not None
+        and isinstance(declared_responses, dict)
+        and any(
+            key in declared_responses
+            for key in (status_text, "default", status_family, status_family.lower())
+        )
+    )
+    contract_findings = []
+    if status_code is not None and not response_declared:
+        contract_findings.append(
+            {
+                "kind": "undocumented_status",
+                "status_code": status_code,
+                "classification": "contract_observation",
+                "confirmed_defect": False,
+            }
+        )
+    elif status_code is not None and isinstance(declared_responses, dict):
+        response_key = next(
+            (
+                key
+                for key in (status_text, status_family, status_family.lower(), "default")
+                if key in declared_responses
+            ),
+            None,
+        )
+        response_definition = declared_responses.get(response_key, {}) if response_key else {}
+        content = (
+            response_definition.get("content", {})
+            if isinstance(response_definition, dict)
+            else {}
+        )
+        declared_types = list(content) if isinstance(content, dict) else []
+        actual_type = response_headers.get("content-type", "").split(";", 1)[0].strip().lower()
+        compatible = any(
+            expected == "*/*"
+            or actual_type == expected.lower()
+            or (expected.endswith("/*") and actual_type.startswith(expected[:-1].lower()))
+            for expected in declared_types
+        )
+        if declared_types and actual_type and not compatible:
+            contract_findings.append(
+                {
+                    "kind": "undocumented_content_type",
+                    "expected_content_types": declared_types,
+                    "actual_content_type": actual_type,
+                    "classification": "contract_observation",
+                    "confirmed_defect": False,
+                }
+            )
+    report = {
+        "report_type": "candidate_execution",
+        "execution_id": execution_id,
+        "candidate": {
+            "id": candidate["id"],
+            "kind": candidate["kind"],
+            "reason": candidate["reason"],
+            "mutation": candidate["mutation"],
+        },
+        "operation": {
+            "id": operation["id"],
+            "method": method,
+            "path": operation["path"],
+            "summary": operation.get("summary", ""),
+        },
+        "execution": {
+            "origin": origin,
+            "outcome": error or "http_response",
+            "status_code": status_code,
+            "elapsed_ms": elapsed_ms,
+            "response_bytes": response_bytes,
+            "response_headers": response_headers,
+            "response_body_persisted": False,
+        },
+        "assertions": assertions,
+        "contract_findings": contract_findings,
+        "next_action": (
+            "Review the target response against the declared contract; this observation alone "
+            "does not confirm a defect."
+            if contract_findings
+            else "Review the response and add an explicit assertion if a contract check is needed."
+        ),
+    }
+    return report
+
+
+def _execution_report_response(record: ExecutionReportRecord) -> dict[str, Any]:
+    return {
+        "id": str(record.id),
+        "project_id": str(record.project_id),
+        "specification_id": str(record.specification_id),
+        "candidate_id": record.candidate_id,
+        "created_at": record.created_at.isoformat() if record.created_at else None,
+        **record.report,
+    }
+
+
+@router.get("/execution-reports")
+def list_execution_reports(
+    project_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    limit: int = Query(default=50, ge=1, le=100),
+) -> list[dict[str, Any]]:
+    project = _project(db, project_id)
+    return [
+        {
+            "id": str(record.id),
+            "project_id": str(record.project_id),
+            "specification_id": str(record.specification_id),
+            "candidate_id": record.candidate_id,
+            "created_at": record.created_at.isoformat(),
+            "status_code": record.report["execution"]["status_code"],
+        }
+        for record in db.scalars(
+            select(ExecutionReportRecord)
+            .where(ExecutionReportRecord.project_id == project.id)
+            .order_by(ExecutionReportRecord.created_at.desc())
+            .limit(limit)
+        )
+    ]
+
+
+@router.get("/execution-reports/{report_id}")
+def get_execution_report(
+    project_id: UUID,
+    report_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    project = _project(db, project_id)
+    record = db.scalar(
+        select(ExecutionReportRecord).where(
+            ExecutionReportRecord.id == report_id,
+            ExecutionReportRecord.project_id == project.id,
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Execution report not found.")
+    return _execution_report_response(record)
+
+
+@router.get("/execution-reports/{report_id}/export")
+def export_execution_report(
+    project_id: UUID,
+    report_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+    format: Literal["json", "markdown", "csv"] = Query(),
+) -> Response:
+    report = get_execution_report(project_id, report_id, db)
+    if format == "json":
+        body = json.dumps(report, ensure_ascii=False, indent=2)
+        media_type, suffix = "application/json", "json"
+    elif format == "markdown":
+        body = _execution_report_markdown(report)
+        media_type, suffix = "text/markdown; charset=utf-8", "md"
+    else:
+        buffer = io.StringIO(newline="")
+        writer = csv.writer(buffer)
+        writer.writerow(
+            [
+                "report_id",
+                "execution_id",
+                "candidate_id",
+                "status_code",
+                "elapsed_ms",
+                "assertion",
+                "passed",
+                "contract_finding",
+            ]
+        )
+        assertions = report["assertions"] or [None]
+        findings = report["contract_findings"] or [None]
+        for assertion in assertions:
+            for finding in findings:
+                writer.writerow([
+                    report["id"],
+                    report["execution_id"],
+                    report["candidate_id"],
+                    report["execution"]["status_code"],
+                    report["execution"]["elapsed_ms"],
+                    assertion["kind"] if assertion else "",
+                    assertion["passed"] if assertion else "",
+                    finding["kind"] if finding else "",
+                ])
+        body = buffer.getvalue()
+        media_type, suffix = "text/csv; charset=utf-8", "csv"
+    return Response(
+        content=body,
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'attachment; filename="execution-report-{report_id}.{suffix}"'
+        },
+    )
+
+
+def _execution_report_markdown(report: dict[str, Any]) -> str:
+    execution = report["execution"]
+    lines = [
+        f"# Candidate execution report {report['id']}",
+        "",
+        f"- Execution: `{report['execution_id']}`",
+        f"- Candidate: `{report['candidate_id']}` ({report['candidate']['kind']})",
+        f"- Operation: `{report['operation']['method']} {report['operation']['path']}`",
+        f"- Outcome: `{execution['outcome']}`",
+        f"- Status: `{execution['status_code']}`",
+        f"- Duration: `{execution['elapsed_ms']} ms`",
+        "- Response body persisted: no",
+        "",
+        "## Assertions",
+    ]
+    lines.extend(
+        f"- {assertion['kind']}: expected `{assertion['expected']}`, "
+        f"observed `{assertion['actual']}`, passed `{assertion['passed']}`"
+        for assertion in report["assertions"]
+    )
+    lines.append("\n## Contract observations")
+    lines.extend(
+        f"- {finding['kind']} at status `{finding.get('status_code', execution['status_code'])}`; "
+        f"classification `{finding['classification']}`, confirmed defect: no"
+        for finding in report["contract_findings"]
+    )
+    lines.extend(["", f"Next action: {report['next_action']}"])
+    return "\n".join(lines) + "\n"
 
 
 @router.get("/generation-reports")
