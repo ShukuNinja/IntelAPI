@@ -18,6 +18,7 @@ class ApiSpecification(Base):
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     spec_version: Mapped[str] = mapped_column(String(32), nullable=False)
     source_format: Mapped[str] = mapped_column(String(8), nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     source_document: Mapped[dict] = mapped_column(JSON, nullable=False)
     normalized_operations: Mapped[list] = mapped_column(JSON, nullable=False)

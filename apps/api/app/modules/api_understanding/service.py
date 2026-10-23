@@ -32,6 +32,9 @@ def parse_specification_content(content: str, source_format: str) -> dict[str, A
         mark = getattr(exc, "problem_mark", None)
         location = f" at line {mark.line + 1}, column {mark.column + 1}" if mark else ""
         raise SpecificationError(f"Invalid YAML{location}.") from exc
+    # PyYAML resolves some plain scalars (for example dates) to Python objects
+    # that cannot be returned by JSON APIs or stored in JSON database columns.
+    document = json.loads(json.dumps(document, default=str))
     return parse_specification(document)
 
 

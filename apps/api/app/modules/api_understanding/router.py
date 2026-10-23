@@ -1,8 +1,9 @@
 from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field, model_validator
+from pydantic import AnyHttpUrl, BaseModel, Field, model_validator
 
+from app.modules.api_understanding.discovery import discover_specifications
 from app.modules.api_understanding.service import (
     SpecificationError,
     generate_candidates,
@@ -12,12 +13,18 @@ from app.modules.api_understanding.service import (
 )
 
 router = APIRouter(prefix="/specifications", tags=["specifications"])
+discovery_router = APIRouter(prefix="/discovery", tags=["discovery"])
+
+
+class DiscoveryInput(BaseModel):
+    url: AnyHttpUrl
 
 
 class SpecificationInput(BaseModel):
     document: dict[str, Any] | None = None
     content: str | None = Field(default=None, max_length=2_000_000)
     source_format: Literal["json", "yaml"] = "json"
+    source_url: AnyHttpUrl | None = None
 
     @model_validator(mode="after")
     def exactly_one_source(self) -> "SpecificationInput":
@@ -34,6 +41,18 @@ class CandidatePreviewInput(BaseModel):
 class GenerationReportInput(BaseModel):
     operations: list[dict[str, Any]] = Field(min_length=1, max_length=100)
     per_operation_limit: int = Field(default=20, ge=1, le=20)
+
+
+@discovery_router.post("/scan")
+async def scan_for_specifications(payload: DiscoveryInput) -> dict[str, Any]:
+    try:
+        return await discover_specifications(str(payload.url))
+    except TimeoutError as exc:
+        raise HTTPException(
+            status_code=504, detail="Specification discovery exceeded its time limit."
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.post("/parse")

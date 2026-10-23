@@ -16,6 +16,7 @@ type HistoryEntry = {
   id: string; method: string; origin: string; status_code: number | null
   elapsed_ms: number | null; response_bytes: number | null; outcome: string
   error_summary: string | null; created_at: string
+  candidate_id?: string | null
 }
 
 export function WorkspacePage() {
@@ -85,7 +86,7 @@ export function WorkspacePage() {
       {response ? <div className="grid gap-3 p-4"><div className="flex flex-wrap gap-4 text-xs text-slate-400"><span>TIME <strong className="text-slate-100">{response.elapsed_ms} ms</strong></span><span>SIZE <strong className="text-slate-100">{response.response_bytes} bytes</strong></span><span>ORIGIN <strong className="text-slate-100">{response.origin}</strong></span></div><pre className="max-h-[32rem] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs text-slate-200">{JSON.stringify(response.body, null, 2)}</pre><details><summary className="cursor-pointer text-xs text-slate-400">Response headers</summary><pre className="mt-2 text-xs text-slate-400">{JSON.stringify(response.headers, null, 2)}</pre></details></div> : <div className="p-5 text-xs text-slate-500">Send a request to see its real response here.</div>}
     </Panel>
     <Panel title="Recent executions" subtitle="History stores status and timing metadata. Request credentials and response bodies are not persisted.">
-      {history.length ? <div className="divide-y divide-slate-800">{history.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 p-3 text-xs"><Badge tone={item.status_code && item.status_code < 400 ? 'success' : item.status_code ? 'warning' : 'neutral'}>{item.status_code ?? item.outcome}</Badge><strong>{item.method}</strong><code className="text-slate-400">{item.origin}</code><span className="text-slate-500">{item.elapsed_ms == null ? '—' : `${item.elapsed_ms} ms`}</span><time className="ml-auto text-slate-500">{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="flex items-center gap-2 p-4 text-xs text-slate-500"><Clock3 size={15} />No request history for this project.</div>}
+      {history.length ? <div className="divide-y divide-slate-800">{history.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 p-3 text-xs"><Badge tone={item.status_code && item.status_code < 400 ? 'success' : item.status_code ? 'warning' : 'neutral'}>{item.status_code ?? item.outcome}</Badge><strong>{item.method}</strong><code className="text-slate-400">{item.origin}</code>{item.candidate_id && <Badge tone="info">Candidate {item.candidate_id}</Badge>}<span className="text-slate-500">{item.elapsed_ms == null ? '—' : `${item.elapsed_ms} ms`}</span><time className="ml-auto text-slate-500">{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="flex items-center gap-2 p-4 text-xs text-slate-500"><Clock3 size={15} />No request history for this project.</div>}
     </Panel>
   </>
 }

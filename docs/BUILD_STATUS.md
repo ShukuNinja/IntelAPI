@@ -12,8 +12,8 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 - [x] Explorer UI creates/selects a project, imports JSON/YAML files or pasted content, saves and reloads stored specifications/reports, browses actual operations, previews candidates, and downloads report exports. Frontend typecheck/lint/build pass.
 - [x] Shared outbound executor supports bounded HTTP/HTTPS requests, DNS destination validation and IP pinning, loopback development targets, denied private/reserved targets by default, disabled redirects/proxies, timeouts, response limits, and unsafe-method confirmation. Workspace displays real responses and project-scoped execution history; execution metadata migration added. A real loopback fixture request passed.
 - [ ] PostgreSQL-backed deployment verification, real authentication, saved requests, and cross-restart persistence.
-- [ ] Safe spec URL/docs-UI discovery and fetch, SSRF policy, `$ref` resolution policy reporting, and persistence.
-- [ ] Candidate persistence/validation, feedback policy, candidate execution, assertions, drift/readiness analyzers, execution reports, and exports.
+- [~] Safe spec URL/docs-UI discovery is implemented in the API Explorer with bounded standard-path probing, Swagger UI config parsing, explicit choice for multiple matches, shared outbound SSRF controls, and redacted persisted source URLs. `$ref` resolution policy reporting remains incomplete; the discovery route still needs a passing async integration check.
+- [~] Persisted candidates can now be run against an explicitly supplied base URL and baseline query/path/body values through the shared bounded executor; execution outcomes are recorded without storing credentials or response bodies. Candidate validation, feedback policy, response assertions, drift/readiness analyzers, and execution reports/exports remain incomplete.
 - [ ] Campaign, findings, health-check, collection, environment, and settings workflows connected to backend routes. Unsupported screens use explicit empty states instead of sample records.
 - [ ] Full E2E, Docker Compose, database restart persistence, security tests, and evaluation benchmarks.
 
@@ -29,6 +29,9 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 - `docker compose config --services` — passed; services resolved as `db`, `api`, `web`.
 - `docker compose ps` — unavailable: Docker Desktop Linux engine is not running. PostgreSQL runtime persistence has not been verified.
 - `git diff --check` — passed.
+- Alembic `upgrade head` — passed against a fresh in-memory SQLite database including migration `0006`.
+- Latest frontend typecheck, lint, and production build — passed after connecting candidate execution controls.
+- The new discovery and source-URL changes pass Python syntax compilation and Ruff. Focused pytest invocations stalled before completing under the current local Python/async test runner, including a pre-existing async executor test; earlier 35-test, migration, and frontend checks were completed before these latest changes.
 
 ## Git and environment
 

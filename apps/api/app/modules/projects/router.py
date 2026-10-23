@@ -1,6 +1,7 @@
 import hashlib
 import json
 from typing import Annotated, Any
+from urllib.parse import urlsplit, urlunsplit
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -46,6 +47,21 @@ def _local_user(db: Session) -> User:
         db.add(user)
         db.flush()
     return user
+
+
+def _redact_source_url(source_url: str | None) -> str | None:
+    if source_url is None:
+        return None
+    parsed = urlsplit(source_url)
+    hostname = parsed.hostname or ""
+    if ":" in hostname:
+        hostname = f"[{hostname}]"
+    try:
+        port = parsed.port
+    except ValueError:
+        port = None
+    authority = f"{hostname}:{port}" if port is not None else hostname
+    return urlunsplit((parsed.scheme, authority, parsed.path, "", ""))
 
 
 @router.get("/projects")
@@ -111,6 +127,7 @@ def import_specification(
     except SpecificationError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    document = json.loads(json.dumps(document, default=str))
     digest = hashlib.sha256(
         json.dumps(document, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -127,6 +144,7 @@ def import_specification(
             title=normalized["specification"]["title"],
             spec_version=normalized["specification"]["version"],
             source_format=source_format,
+            source_url=_redact_source_url(str(payload.source_url) if payload.source_url else None),
             content_hash=digest,
             source_document=document,
             normalized_operations=normalized["operations"],
@@ -134,11 +152,16 @@ def import_specification(
         db.add(spec)
         db.commit()
         db.refresh(spec)
+    elif spec.source_url is None and payload.source_url is not None:
+        spec.source_url = _redact_source_url(str(payload.source_url))
+        db.commit()
+        db.refresh(spec)
     return {
         "id": str(spec.id),
         "project_id": str(spec.project_id),
         "title": spec.title,
         "version": spec.spec_version,
+        "source_url": spec.source_url,
         "content_hash": spec.content_hash,
         "created": created,
         "operations": spec.normalized_operations,
@@ -164,6 +187,7 @@ def list_specifications(
             "title": spec.title,
             "version": spec.spec_version,
             "content_hash": spec.content_hash,
+            "source_url": spec.source_url,
             "created_at": spec.created_at.isoformat(),
             "operation_count": len(spec.normalized_operations),
         }
@@ -201,6 +225,7 @@ def get_specification(
         "title": specification.title,
         "version": specification.spec_version,
         "source_format": specification.source_format,
+        "source_url": specification.source_url,
         "document": specification.source_document,
         "operations": specification.normalized_operations,
     }

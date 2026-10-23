@@ -116,6 +116,7 @@ def list_executions(
             "id": str(record.id),
             "method": record.request_snapshot.get("method", ""),
             "origin": record.request_snapshot.get("origin", ""),
+            "candidate_id": record.request_snapshot.get("candidate_id"),
             "status_code": record.status_code,
             "elapsed_ms": record.duration_ms,
             "response_bytes": record.response_size_bytes,

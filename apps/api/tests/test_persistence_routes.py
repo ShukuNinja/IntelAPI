@@ -12,7 +12,9 @@ import app.models  # noqa: F401
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.modules.api_understanding.service import generate_candidates
 from app.modules.execution import router as execution_router
+from app.modules.test_generation import router as test_generation_router
 
 
 @pytest.fixture
@@ -55,7 +57,8 @@ def test_imported_specification_persists_and_deduplicates(client: TestClient) ->
         "paths": {"/items": {"get": {"operationId": "listItems"}}},
     }
     endpoint = f"/api/v1/projects/{project['id']}/specifications/import"
-    first = client.post(endpoint, json={"document": spec})
+    source_url = "https://api.example.com/openapi.json?token=must-not-be-persisted"
+    first = client.post(endpoint, json={"document": spec, "source_url": source_url})
     second = client.post(endpoint, json={"document": spec})
     assert first.status_code == 201
     assert first.json()["created"] is True
@@ -63,9 +66,11 @@ def test_imported_specification_persists_and_deduplicates(client: TestClient) ->
     records = client.get(f"/api/v1/projects/{project['id']}/specifications")
     assert len(records.json()) == 1
     assert records.json()[0]["operation_count"] == 1
+    assert records.json()[0]["source_url"] == "https://api.example.com/openapi.json"
     detail = client.get(f"/api/v1/projects/{project['id']}/specifications/{first.json()['id']}")
     assert detail.status_code == 200
     assert detail.json()["operations"][0]["path"] == "/items"
+    assert detail.json()["source_url"] == "https://api.example.com/openapi.json"
 
 
 def test_unknown_project_cannot_receive_specification(client: TestClient) -> None:
@@ -166,3 +171,63 @@ def test_generation_report_is_persisted_reopenable_and_exportable(client: TestCl
     )
     assert "Orders API" in markdown.text
     assert "candidate_id" in csv_export.text
+
+
+def test_candidate_execution_applies_boundary_and_persists_metadata(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    project = client.post("/api/v1/projects", json={"name": "Candidate runs"}).json()
+    spec = {
+        "openapi": "3.1.0",
+        "info": {"title": "Items API", "version": "1"},
+        "paths": {
+            "/items": {
+                "get": {
+                    "operationId": "listItems",
+                    "parameters": [
+                        {
+                            "name": "limit",
+                            "in": "query",
+                            "required": True,
+                            "schema": {"type": "integer", "minimum": 1},
+                        }
+                    ],
+                }
+            }
+        },
+    }
+    saved = client.post(
+        f"/api/v1/projects/{project['id']}/specifications/import", json={"document": spec}
+    ).json()
+    operation = saved["operations"][0]
+    candidate = generate_candidates(operation)[0]
+    mocked_execute = AsyncMock(
+        return_value={
+            "status_code": 200,
+            "elapsed_ms": 8,
+            "response_bytes": 12,
+            "headers": {"content-type": "application/json"},
+            "body": {"items": []},
+            "origin": "http://localhost:9000",
+            "outcome": "http_response",
+        }
+    )
+    monkeypatch.setattr(test_generation_router, "execute_request", mocked_execute)
+    endpoint = (
+        f"/api/v1/projects/{project['id']}/specifications/{saved['id']}/operations/"
+        f"{operation['id']}/candidates/{candidate['id']}/execute"
+    )
+    response = client.post(
+        endpoint,
+        json={
+            "base_url": "http://localhost:9000",
+            "query_parameters": {"limit": 10},
+            "path_parameters": {},
+        },
+    )
+    assert response.status_code == 201
+    assert response.json()["body"] == {"items": []}
+    assert mocked_execute.await_args.kwargs["url"] == "http://localhost:9000/items?limit=0"
+    history = client.get(f"/api/v1/projects/{project['id']}/executions")
+    assert history.json()[0]["status_code"] == 200
+    assert history.json()[0]["method"] == "GET"
