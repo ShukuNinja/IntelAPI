@@ -5,8 +5,8 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 ## Implemented and verified in this workspace
 
 - [x] Backend liveness and existing project/user ORM scaffold copied from IntelAPI.
-- [ ] Parse OpenAPI 3.0.x/3.1.x JSON to normalized operation records, including inherited path parameters (implementation and tests added; backend test runtime unavailable).
-- [ ] Produce deterministic, explainable schema-derived candidate previews with a request cap (implementation and tests added; backend test runtime unavailable).
+- [x] Parse OpenAPI 3.0.x/3.1.x JSON to normalized operation records, including inherited path parameters (6 focused API/domain tests passed).
+- [x] Produce deterministic, explainable schema-derived candidate previews with a request cap (covered by the same focused tests).
 - [x] Explorer UI parses a user-selected JSON file/paste and previews real backend operations/candidates; frontend typecheck/lint/build passed. Data is session-only.
 - [ ] PostgreSQL persistence, auth, saved requests, execution history, and migrations from an empty database.
 - [ ] Safe spec discovery/import, URL/SSRF policy, YAML, Swagger 2 normalization, and remote reference controls.
@@ -17,12 +17,14 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 ## Verification
 
 - `python -m compileall -q app tests` — passed (Python 3.13 syntax compilation).
-- `pytest -q` — not run: `pytest` is not installed; `py -3.12 -m pytest -q` reports no Python 3.12 runtime; Python 3.13 has no pytest/FastAPI/SQLAlchemy installed.
+- `apps/api/.venv/Scripts/python.exe -m pytest tests/test_api_understanding.py -q` — 6 passed.
+- `apps/api/.venv/Scripts/python.exe -m pytest -q` — 8 passed, 4 errors. Existing `test_models.py` setup could not authenticate to the local PostgreSQL server with the configured database credentials; `.env` was left untouched.
+- `apps/api/.venv/Scripts/ruff.exe check app/api/router.py app/modules/api_understanding tests/test_api_understanding.py` — passed.
 - `npm run typecheck` — passed.
 - `npm run lint` — passed.
 - `npm run build` — passed (Vite production build completed).
 - `docker compose config --services` — passed; services resolved as `db`, `api`, `web`.
-- `docker compose ps` — unavailable: Docker Desktop Linux engine is not running.
+- `docker compose ps` — unavailable: Docker Desktop Linux engine is not running; local PostgreSQL was reachable but rejected the configured credentials.
 - `git diff --check` — passed.
 
 ## Git and environment
