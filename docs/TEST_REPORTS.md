@@ -1,5 +1,9 @@
-# Test reports status
+# Test reports
 
-The current generation report is a transient preview, separate from runtime execution reports. It lists each parsed operation, candidate count, candidate ID, rule kind, rationale, mutation preview, and `preview` validation status. Its cap and truncation behavior are documented in [TEST_GENERATION.md](TEST_GENERATION.md).
+Generation reports are persisted per project/specification and are distinct from runtime execution reports. They list endpoint coverage, candidate count/IDs, rule kind, rationale, mutation preview, and `preview` validation status. Their cap and truncation behavior are documented in [TEST_GENERATION.md](TEST_GENERATION.md). Reports can be reopened and exported as JSON, Markdown, or CSV.
 
-Execution reports, persisted evidence, JSON/CSV/Markdown exports, and restart-safe report history are not implemented yet.
+Candidate execution reports are persisted separately from generation reports. They include operation/candidate identity, HTTP outcome/status, duration, response size and allowlisted response headers, explicit status assertions, contract observations for undocumented statuses/content types, and limited response-schema mismatch paths. JSON Schema references and composition keywords are reported as skipped analysis paths. Observations are not classified as confirmed defects.
+
+The response body is returned to the active request UI, used in memory for the bounded schema check, and never persisted in execution history or reports. Execution history stores only safe method/origin/candidate metadata and outcome fields. Candidate run reports can be reopened in Request History and exported as JSON, Markdown, or CSV. Response evidence is currently limited to mismatch paths/rules; assertion evaluation for arbitrary response headers and JSON paths, durable findings/triage, and restart verification remain incomplete.
+
+Specification readiness is a deterministic, read-only analysis over the saved source document and normalized operation list. Findings include severity, rule code, message, and source JSON Pointer. Its scope is documented completeness; it does not establish security or runtime correctness and is not persisted as a separate report record.

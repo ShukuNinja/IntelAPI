@@ -277,6 +277,7 @@ async def execute_candidate(
             elapsed_ms=None,
             response_bytes=None,
             response_headers={},
+            response_body=None,
             expected_status_code=payload.expected_status_code,
             error=exc.outcome,
         )
@@ -316,6 +317,7 @@ async def execute_candidate(
         elapsed_ms=result["elapsed_ms"],
         response_bytes=result["response_bytes"],
         response_headers=result["headers"],
+        response_body=result["body"],
         expected_status_code=payload.expected_status_code,
     )
     report_record = ExecutionReportRecord(
@@ -348,6 +350,7 @@ def _candidate_run_report(
     elapsed_ms: int | None,
     response_bytes: int | None,
     response_headers: dict[str, str],
+    response_body: Any,
     expected_status_code: int | None,
     error: str | None = None,
 ) -> dict[str, Any]:
@@ -393,9 +396,7 @@ def _candidate_run_report(
         )
         response_definition = declared_responses.get(response_key, {}) if response_key else {}
         content = (
-            response_definition.get("content", {})
-            if isinstance(response_definition, dict)
-            else {}
+            response_definition.get("content", {}) if isinstance(response_definition, dict) else {}
         )
         declared_types = list(content) if isinstance(content, dict) else []
         actual_type = response_headers.get("content-type", "").split(";", 1)[0].strip().lower()
@@ -415,6 +416,27 @@ def _candidate_run_report(
                     "confirmed_defect": False,
                 }
             )
+        schema = _response_schema(content, actual_type)
+        if isinstance(schema, dict) and response_body is not None:
+            mismatches, skipped = _response_schema_mismatches(schema, response_body)
+            if mismatches:
+                contract_findings.append(
+                    {
+                        "kind": "response_schema_mismatch",
+                        "mismatches": mismatches,
+                        "classification": "contract_observation",
+                        "confirmed_defect": False,
+                    }
+                )
+            if skipped:
+                contract_findings.append(
+                    {
+                        "kind": "response_schema_check_partial",
+                        "skipped_paths": skipped,
+                        "classification": "analysis_limit",
+                        "confirmed_defect": False,
+                    }
+                )
     report = {
         "report_type": "candidate_execution",
         "execution_id": execution_id,
@@ -449,6 +471,135 @@ def _candidate_run_report(
         ),
     }
     return report
+
+
+def _response_schema(content: Any, actual_type: str) -> dict[str, Any] | None:
+    if not isinstance(content, dict):
+        return None
+    exact = next(
+        (
+            value
+            for content_type, value in content.items()
+            if str(content_type).lower() == actual_type
+        ),
+        {},
+    )
+    if not exact:
+        exact = next(
+            (
+                value
+                for content_type, value in content.items()
+                if isinstance(content_type, str)
+                and content_type.endswith("/*")
+                and actual_type.startswith(content_type[:-1].lower())
+            ),
+            {},
+        )
+    schema = exact.get("schema") if isinstance(exact, dict) else None
+    return schema if isinstance(schema, dict) else None
+
+
+def _response_schema_mismatches(
+    schema: dict[str, Any], value: Any
+) -> tuple[list[dict[str, str]], list[str]]:
+    mismatches: list[dict[str, str]] = []
+    skipped: list[str] = []
+    type_map = {
+        "object": dict,
+        "array": list,
+        "string": str,
+        "boolean": bool,
+        "null": type(None),
+    }
+
+    def visit(current_schema: Any, current: Any, path: str, depth: int) -> None:
+        if len(mismatches) >= 20:
+            return
+        if depth > 12:
+            skipped.append(path)
+            return
+        if not isinstance(current_schema, dict):
+            skipped.append(path)
+            return
+        if "$ref" in current_schema or any(
+            keyword in current_schema for keyword in ("allOf", "oneOf", "anyOf", "not")
+        ):
+            skipped.append(path)
+            return
+        if current_schema.get("nullable") is True and current is None:
+            return
+        expected_type = current_schema.get("type")
+        expected_types = expected_type if isinstance(expected_type, list) else [expected_type]
+        expected_types = [item for item in expected_types if isinstance(item, str)]
+        if expected_types:
+            matches = False
+            for item in expected_types:
+                if item == "integer" and isinstance(current, int) and not isinstance(current, bool):
+                    matches = True
+                elif (
+                    item == "number"
+                    and isinstance(current, (int, float))
+                    and not isinstance(current, bool)
+                ):
+                    matches = True
+                elif item in type_map and isinstance(current, type_map[item]):
+                    matches = True
+            if not matches:
+                mismatches.append(
+                    {"path": path, "rule": "type", "expected": "|".join(expected_types)}
+                )
+                return
+        enum = current_schema.get("enum")
+        if isinstance(enum, list) and current not in enum:
+            mismatches.append({"path": path, "rule": "enum", "expected": "declared enum value"})
+        if isinstance(current, dict):
+            required = current_schema.get("required", [])
+            if isinstance(required, list):
+                for name in required:
+                    if isinstance(name, str) and name not in current:
+                        mismatches.append(
+                            {"path": f"{path}/{name}", "rule": "required", "expected": "present"}
+                        )
+            properties = current_schema.get("properties", {})
+            if isinstance(properties, dict):
+                for name, child in properties.items():
+                    if name in current:
+                        visit(child, current[name], f"{path}/{name}", depth + 1)
+            if current_schema.get("additionalProperties") is False and isinstance(properties, dict):
+                for name in current.keys() - properties.keys():
+                    mismatches.append(
+                        {
+                            "path": f"{path}/{name}",
+                            "rule": "additionalProperties",
+                            "expected": "not present",
+                        }
+                    )
+        elif isinstance(current, list):
+            item_schema = current_schema.get("items")
+            if isinstance(item_schema, dict):
+                for index, item in enumerate(current):
+                    visit(item_schema, item, f"{path}/{index}", depth + 1)
+                    if len(mismatches) >= 20:
+                        break
+        if isinstance(current, str):
+            for keyword, compare in (
+                ("minLength", lambda n: len(current) < n),
+                ("maxLength", lambda n: len(current) > n),
+            ):
+                bound = current_schema.get(keyword)
+                if isinstance(bound, int) and compare(bound):
+                    mismatches.append({"path": path, "rule": keyword, "expected": str(bound)})
+        if isinstance(current, (int, float)) and not isinstance(current, bool):
+            for keyword, compare in (
+                ("minimum", lambda n: current < n),
+                ("maximum", lambda n: current > n),
+            ):
+                bound = current_schema.get(keyword)
+                if isinstance(bound, (int, float)) and compare(bound):
+                    mismatches.append({"path": path, "rule": keyword, "expected": str(bound)})
+
+    visit(schema, value, "$", 0)
+    return mismatches[:20], sorted(set(skipped))[:20]
 
 
 def _execution_report_response(record: ExecutionReportRecord) -> dict[str, Any]:
@@ -532,22 +683,32 @@ def export_execution_report(
                 "assertion",
                 "passed",
                 "contract_finding",
+                "evidence_path",
+                "rule",
+                "expected",
             ]
         )
         assertions = report["assertions"] or [None]
         findings = report["contract_findings"] or [None]
         for assertion in assertions:
             for finding in findings:
-                writer.writerow([
-                    report["id"],
-                    report["execution_id"],
-                    report["candidate_id"],
-                    report["execution"]["status_code"],
-                    report["execution"]["elapsed_ms"],
-                    assertion["kind"] if assertion else "",
-                    assertion["passed"] if assertion else "",
-                    finding["kind"] if finding else "",
-                ])
+                mismatches = (finding or {}).get("mismatches") or [None]
+                for mismatch in mismatches:
+                    writer.writerow(
+                        [
+                            report["id"],
+                            report["execution_id"],
+                            report["candidate_id"],
+                            report["execution"]["status_code"],
+                            report["execution"]["elapsed_ms"],
+                            assertion["kind"] if assertion else "",
+                            assertion["passed"] if assertion else "",
+                            finding["kind"] if finding else "",
+                            mismatch["path"] if mismatch else "",
+                            mismatch["rule"] if mismatch else "",
+                            mismatch["expected"] if mismatch else "",
+                        ]
+                    )
         body = buffer.getvalue()
         media_type, suffix = "text/csv; charset=utf-8", "csv"
     return Response(
@@ -585,6 +746,14 @@ def _execution_report_markdown(report: dict[str, Any]) -> str:
         f"classification `{finding['classification']}`, confirmed defect: no"
         for finding in report["contract_findings"]
     )
+    for finding in report["contract_findings"]:
+        lines.extend(
+            f"  - `{item['path']}`: `{item['rule']}` expected `{item['expected']}`"
+            for item in finding.get("mismatches", [])
+        )
+        lines.extend(
+            f"  - Schema check skipped at `{path}`." for path in finding.get("skipped_paths", [])
+        )
     lines.extend(["", f"Next action: {report['next_action']}"])
     return "\n".join(lines) + "\n"
 
