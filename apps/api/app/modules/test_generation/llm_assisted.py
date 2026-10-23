@@ -2,7 +2,7 @@
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from app.integrations.llm import (
@@ -247,6 +247,7 @@ def generate_llm_candidates(
     provider: LLMProvider,
     *,
     semantic_facts: Sequence[Mapping[str, Any]] = (),
+    on_response: Callable[[LLMResponse], None] | None = None,
 ) -> tuple[TestCandidate, ...]:
     """Request, validate, and deduplicate LLM proposals without executing them."""
     request = _build_request(operation, semantic_facts)
@@ -260,6 +261,8 @@ def generate_llm_candidates(
 
     if not isinstance(response, LLMResponse):
         raise LLMProviderError("The LLM provider returned an invalid response.")
+    if on_response is not None:
+        on_response(response)
 
     proposals = _parse_proposals(response.text)
 

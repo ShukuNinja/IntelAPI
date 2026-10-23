@@ -9,7 +9,7 @@ import { apiRequest } from '../../lib/apiClient'
 import { campaignService, type CampaignExecution, type CampaignReport, type CampaignTestCase } from '../campaigns/campaignService'
 import { useProject } from '../projects/ProjectContext'
 import { specificationService, type ApiOperation, type Specification } from '../explorer/specificationService'
-import { experimentService, approachDetails, type Experiment, type ExperimentApproach, type ExperimentComparison, type ExperimentMetric } from './experimentService'
+import { experimentService, approachDetails, type Experiment, type ExperimentApproach, type ExperimentComparison, type ExperimentMetric, type LlmProviderOptions } from './experimentService'
 
 interface EnvironmentOption {
   id: string
@@ -61,6 +61,9 @@ export function ExperimentWorkbenchPage() {
   const [selectedOperations, setSelectedOperations] = useState<string[]>([])
   const [selectedApproaches, setSelectedApproaches] = useState<ExperimentApproach[]>(approachOrder)
   const [useLlm, setUseLlm] = useState(false)
+  const [llmProviders, setLlmProviders] = useState<LlmProviderOptions | null>(null)
+  const [llmProvider, setLlmProvider] = useState<'nvidia' | 'groq'>('nvidia')
+  const [llmModel, setLlmModel] = useState('')
   const [name, setName] = useState('')
   const [experiments, setExperiments] = useState<Experiment[]>([])
   const [selectedExperimentId, setSelectedExperimentId] = useState('')
@@ -78,15 +81,19 @@ export function ExperimentWorkbenchPage() {
     }
     try {
       setLoading(true)
-      const [specResult, environmentResult, experimentResult] = await Promise.all([
+      const [specResult, environmentResult, experimentResult, providerResult] = await Promise.all([
         specificationService.list(project.id),
         apiRequest<{ items: EnvironmentOption[] }>(`/v1/projects/${project.id}/environments`),
         experimentService.list(project.id),
+        experimentService.providers(),
       ])
       setSpecifications(specResult.items)
       setEnvironments(environmentResult.items.filter(environment => environment.base_url))
       setEnvironmentId(current => environmentResult.items.some(environment => environment.id === current && environment.base_url) ? current : '')
       setExperiments(experimentResult.items)
+      setLlmProviders(providerResult)
+      setLlmProvider(current => providerResult.providers.some(item => item.id === current) ? current : providerResult.default_provider)
+      setLlmModel(current => current || providerResult.providers.find(item => item.id === providerResult.default_provider)?.model || '')
       setSpecificationId(current => specResult.items.some(item => item.id === current) ? current : (specResult.items[0]?.id ?? ''))
       setSelectedExperimentId(current => experimentResult.items.some(item => item.id === current) ? current : (experimentResult.items[0]?.id ?? ''))
       setError(null)
@@ -164,6 +171,8 @@ export function ExperimentWorkbenchPage() {
         approaches: selectedApproaches,
         categories: ['positive', 'negative', 'boundary', 'schema'],
         use_llm: useLlm,
+        llm_provider: llmProvider,
+        llm_model: llmModel.trim() || undefined,
       })
       setName('')
       await refresh()
@@ -219,6 +228,7 @@ export function ExperimentWorkbenchPage() {
         <fieldset className="experiment-approaches"><legend>Approaches</legend>{approachOrder.map(approach => <label className="environment-card" key={approach}><input type="checkbox" checked={selectedApproaches.includes(approach)} onChange={event => setSelectedApproaches(current => event.target.checked ? [...current, approach] : current.filter(item => item !== approach))} /><span className="environment-card__body"><strong>{approachDetails[approach].title}</strong><small>{approachDetails[approach].description}</small></span></label>)}</fieldset>
         <fieldset className="experiment-approaches"><legend>OpenAPI operations ({selectedOperations.length} selected)</legend><div className="resource-list">{operations.map((operation: ApiOperation) => <label className="environment-card" key={operation.id}><input type="checkbox" checked={selectedOperations.includes(operation.id)} onChange={event => setSelectedOperations(current => event.target.checked ? [...current, operation.id] : current.filter(id => id !== operation.id))} /><span className="environment-card__body"><strong>{operation.method.toUpperCase()} {operation.path_template}</strong><small>{operation.summary || operation.operation_key}</small></span></label>)}</div></fieldset>
         <label className="environment-card"><input type="checkbox" checked={useLlm} onChange={event => setUseLlm(event.target.checked)} /><span className="environment-card__body"><strong>Allow configured LLM generation</strong><small>May send selected OpenAPI context and extracted facts to the server configured provider. Disabled runs use deterministic fallback candidates.</small></span></label>
+        {useLlm && <><label htmlFor="experiment-llm-provider">LLM provider</label><select id="experiment-llm-provider" value={llmProvider} onChange={event => { const provider = event.target.value as 'nvidia' | 'groq'; setLlmProvider(provider); setLlmModel(llmProviders?.providers.find(item => item.id === provider)?.model ?? '') }}>{llmProviders?.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id === 'nvidia' ? 'NVIDIA' : 'Groq'}{provider.configured ? ' · configured' : ' · no server key (deterministic fallback)'}</option>)}</select><label htmlFor="experiment-llm-model">Model</label><input id="experiment-llm-model" value={llmModel} maxLength={160} onChange={event => setLlmModel(event.target.value)} placeholder="Configured model" /></>}
         {!useLlm && selectedApproaches.some(approach => approach === 'llm_baseline' || approach === 'semantic_assisted') && <div className="notice notice--warning"><div><strong>LLM approaches will fall back to deterministic generation</strong><p>This run can compare execution policies, but it will not measure the effect of LLM or semantic prompt context.</p></div></div>}
         <div className="form-actions"><Button variant="primary" disabled={busy || !canCreate} onClick={() => void createExperiment()}><Rocket size={15} /> {busy ? 'Queueing approaches…' : 'Run selected approaches'}</Button></div>
       </div>}

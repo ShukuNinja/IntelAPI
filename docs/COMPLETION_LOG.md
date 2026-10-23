@@ -259,9 +259,17 @@ For each subsequent milestone, append the date, changed capabilities/files, migr
 
 ### Known limitations
 
-- Only the existing NVIDIA provider is implemented. Provider/model selection and Groq integration remain unfinished; the UI opts in to the server-configured provider.
-- LLM token usage and provider cost are not exposed by the current adapter. Candidate validation failures are not persisted, so validity rate is `N/A`.
+- Provider cost cannot be estimated because provider pricing is not maintained. Candidate validation failures are not persisted, so validity rate is `N/A`.
 - Constraint IDs are not attached to executions, and there is no labeled ground truth, triage event history, or repeat-trial configuration. Related metrics remain `N/A`.
 - Approach runs share the configured target but the workbench cannot reset target state. The UI warns users to use an isolated target; stateful comparisons may be contaminated.
 - LLM proposals are validated for bounded JSON, operation, category, candidate structure, and declared parameters. Request-body compatibility is not yet a complete JSON Schema validation implementation.
-- No controlled fixture experiment or authenticated browser walkthrough was run for this feature.
+- The initial implementation did not include a controlled fixture experiment or authenticated browser walkthrough.
+
+### 2026-10-23 follow-up — provider selection and acceptance
+
+- Added NVIDIA and Groq provider selection, model overrides, server-side key-presence reporting, and timeout/retry bounds. Keys remain server-side and are never included in provider-option responses.
+- Recorded provider, model, and complete token usage when the provider returns it. Cost remains `N/A` with an explanation because pricing is not maintained.
+- Applied migration `0008_experimental_workbench` to the local development database.
+- Fixed stale candidate/provider test expectations and added Groq, factory, provider-options, and usage-metadata coverage.
+- Backend suite: 244 passed. Ruff and Python compilation passed. Frontend typecheck and production build passed; lint has three existing Fast Refresh warnings.
+- Authenticated browser walkthrough reached the live workbench and verified provider availability/model controls. No experiment was submitted because the selected BloodLink project has no configured target environment.

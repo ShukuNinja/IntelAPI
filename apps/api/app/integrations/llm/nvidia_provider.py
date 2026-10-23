@@ -42,6 +42,14 @@ class NVIDIAProvider:
 
         self._client = client
 
+    @property
+    def provider_name(self) -> str:
+        return "nvidia"
+
+    @property
+    def model_name(self) -> str:
+        return self._model
+
     def generate(self, request: LLMRequest) -> LLMResponse:
         """Generate text without executing requests against target APIs."""
         try:
@@ -68,10 +76,14 @@ class NVIDIAProvider:
             if not isinstance(text, str) or not text.strip():
                 raise LLMProviderError("NVIDIA returned no usable text.")
 
+            usage = getattr(response, "usage", None)
             return LLMResponse(
                 text=text,
                 provider="nvidia",
                 model=self._model,
+                prompt_tokens=getattr(usage, "prompt_tokens", None),
+                completion_tokens=getattr(usage, "completion_tokens", None),
+                total_tokens=getattr(usage, "total_tokens", None),
             )
 
         except LLMProviderError:

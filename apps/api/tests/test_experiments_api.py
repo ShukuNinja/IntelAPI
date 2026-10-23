@@ -42,6 +42,17 @@ def _setup(client):
     return project_id, operation["id"], environment.json()["id"]
 
 
+def test_llm_provider_options_show_configuration_without_secrets(authenticated_client):
+    response = authenticated_client.get("/api/v1/meta/llm-providers")
+
+    assert response.status_code == 200
+    options = response.json()
+    assert options["default_provider"] in {"nvidia", "groq"}
+    assert {provider["id"] for provider in options["providers"]} == {"nvidia", "groq"}
+    assert all(set(provider) == {"id", "configured", "model"} for provider in options["providers"])
+    assert "api_key" not in response.text.lower()
+
+
 def test_comparative_experiment_persists_four_real_approach_campaigns(authenticated_client):
     client = authenticated_client
     project_id, operation_id, environment_id = _setup(client)

@@ -28,7 +28,7 @@ class FakeProvider:
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
-        return LLMResponse(text=self.text, provider="fake", model="fake-model")
+        return LLMResponse(text=self.text, provider="fake", model="fake-model", total_tokens=17)
 
 
 def _operations():
@@ -59,10 +59,15 @@ def test_semantic_approach_supplies_facts_that_baseline_does_not() -> None:
     assert "List inventory" not in baseline_provider.requests[0].user_prompt
     assert "List inventory" in semantic_provider.requests[0].user_prompt
     assert semantic.semantic_fact_count == 1
+    assert baseline.llm_provider == "fake"
+    assert baseline.llm_model == "fake-model"
+    assert baseline.llm_token_usage == 17
 
 
 def test_llm_approaches_use_a_deterministic_fallback_without_provider(monkeypatch) -> None:
-    monkeypatch.setattr("app.modules.test_generation.approaches.create_llm_provider", lambda: None)
+    monkeypatch.setattr(
+        "app.modules.test_generation.approaches.create_llm_provider", lambda **_kwargs: None
+    )
     operations = _operations()
 
     result = generate_for_approach(GenerationApproach.LLM_BASELINE, operations, provider=None)

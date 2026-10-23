@@ -29,3 +29,6 @@ class LLMResponse:
     text: str
     provider: str
     model: str
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None

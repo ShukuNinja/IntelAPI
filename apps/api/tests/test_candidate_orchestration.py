@@ -57,8 +57,8 @@ def _operations():
 def _proposal():
     return {
         "category": "negative",
-        "title": "Reject unsupported query",
-        "parameters": {"unexpected": "value"},
+        "title": "Reject malformed query input",
+        "parameters": {},
         "body": None,
         "rationale": "Explores handling of an unsupported query parameter.",
     }
@@ -67,7 +67,7 @@ def _proposal():
 def test_without_provider_returns_deterministic_baseline(monkeypatch) -> None:
     monkeypatch.setattr(
         "app.modules.test_generation.orchestration.create_llm_provider",
-        lambda: None,
+        lambda **_kwargs: None,
     )
 
     operations = _operations()
@@ -85,7 +85,7 @@ def test_uses_configured_provider_when_none_is_injected(monkeypatch) -> None:
 
     monkeypatch.setattr(
         "app.modules.test_generation.orchestration.create_llm_provider",
-        lambda: provider,
+        lambda **_kwargs: provider,
     )
 
     result = generate_candidates_with_llm(operations)
@@ -98,7 +98,7 @@ def test_uses_configured_provider_when_none_is_injected(monkeypatch) -> None:
 def test_provider_factory_failure_returns_deterministic_baseline(monkeypatch) -> None:
     operations = _operations()
 
-    def fail_factory():
+    def fail_factory(**_kwargs):
         raise RuntimeError("Sensitive initialization details")
 
     monkeypatch.setattr(
@@ -125,7 +125,7 @@ def test_success_merges_and_deduplicates_candidates() -> None:
     assert len(result.candidates) == len(
         {candidate.candidate_id for candidate in result.candidates}
     )
-    assert any(candidate.title == "Reject unsupported query" for candidate in result.candidates)
+    assert any(candidate.title == "Reject malformed query input" for candidate in result.candidates)
     assert provider.calls == len(operations)
 
 
@@ -148,7 +148,7 @@ def test_unexpected_provider_failure_returns_baseline_without_leaking_message() 
     assert result.candidates == generate_candidates(operations)
     assert result.llm_status is LLMGenerationStatus.FAILED
     assert result.llm_error is not None
-    assert result.llm_error == "LLM candidate generation failed: LLMProposalError"
+    assert result.llm_error == "LLM candidate generation failed: LLMProviderError"
     assert "Unexpected sensitive details" not in result.llm_error
 
 

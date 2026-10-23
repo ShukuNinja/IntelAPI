@@ -1,7 +1,7 @@
 """Wire contracts for experiment setup and comparison results."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -27,6 +27,8 @@ class ExperimentCreate(BaseModel):
         max_length=5,
     )
     use_llm: bool = False
+    llm_provider: Literal["nvidia", "groq"] | None = None
+    llm_model: str | None = Field(default=None, min_length=1, max_length=160)
     max_executions: int = Field(default=100, ge=1, le=1000)
     max_iterations: int = Field(default=100, ge=1, le=1000)
     max_duration_seconds: int = Field(default=1800, ge=1, le=86400)
@@ -37,6 +39,13 @@ class ExperimentCreate(BaseModel):
         if not value.strip():
             raise ValueError("Name cannot be blank.")
         return value.strip()
+
+    @field_validator("llm_model")
+    @classmethod
+    def non_blank_model(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("Model cannot be blank.")
+        return value.strip() if value is not None else None
 
     @model_validator(mode="after")
     def validate_unique_selections(self) -> "ExperimentCreate":

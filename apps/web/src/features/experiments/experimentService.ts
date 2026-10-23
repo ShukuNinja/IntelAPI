@@ -36,6 +36,17 @@ export interface MetricValue {
 
 export type ExperimentMetric = MetricValue | Record<string, number>
 
+export interface LlmProviderOption {
+  id: 'nvidia' | 'groq'
+  configured: boolean
+  model: string
+}
+
+export interface LlmProviderOptions {
+  default_provider: 'nvidia' | 'groq'
+  providers: LlmProviderOption[]
+}
+
 export interface ExperimentComparison {
   experiment: Experiment
   metrics_by_approach: Record<string, Record<string, ExperimentMetric>>
@@ -61,6 +72,9 @@ export const approachDetails: Record<ExperimentApproach, { title: string; descri
 }
 
 export const experimentService = {
+  providers() {
+    return apiRequest<LlmProviderOptions>('/v1/meta/llm-providers')
+  },
   list(projectId: string) {
     return apiRequest<{ items: Experiment[]; total: number; limit: number; offset: number }>(
       `/v1/projects/${projectId}/experiments`,
@@ -73,6 +87,8 @@ export const experimentService = {
     approaches: ExperimentApproach[]
     categories: string[]
     use_llm: boolean
+    llm_provider?: 'nvidia' | 'groq'
+    llm_model?: string
   }) {
     return apiRequest<Experiment>(`/v1/projects/${projectId}/experiments`, {
       method: 'POST',

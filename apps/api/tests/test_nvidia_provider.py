@@ -132,5 +132,7 @@ def test_constructor_configures_nvidia_endpoint(
     openai_factory.assert_called_once_with(
         base_url=NVIDIA_BASE_URL,
         api_key="test-key",
+        timeout=30.0,
+        max_retries=1,
     )
     assert provider._client is mock_client

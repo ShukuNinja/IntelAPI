@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from app.integrations.llm import LLMProvider, create_llm_provider
+from app.integrations.llm import LLMProvider, LLMResponse, create_llm_provider
 from app.modules.api_understanding.models import NormalizedOperation
 from app.modules.test_generation.deduplication import deduplicate_candidates
 from app.modules.test_generation.generator import generate_candidates
@@ -33,6 +33,9 @@ class ApproachGenerationResult:
     llm_status: str
     warning: str | None = None
     semantic_fact_count: int = 0
+    llm_provider: str | None = None
+    llm_model: str | None = None
+    llm_token_usage: int | None = None
 
 
 POLICY_VERSIONS = {
@@ -50,6 +53,8 @@ def generate_for_approach(
     semantic_facts_by_operation: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
     provider: LLMProvider | None = None,
     allow_llm: bool = True,
+    llm_provider_name: str | None = None,
+    llm_model_name: str | None = None,
 ) -> ApproachGenerationResult:
     """Generate a validated candidate pool using one explicit approach policy.
 
@@ -92,7 +97,14 @@ def generate_for_approach(
             "disabled",
         )
     try:
-        configured_provider = provider if provider is not None else create_llm_provider()
+        configured_provider = (
+            provider
+            if provider is not None
+            else create_llm_provider(
+                provider_name=llm_provider_name,
+                model_name=llm_model_name,
+            )
+        )
     except Exception:
         return _fallback_result(
             approach,
@@ -110,12 +122,18 @@ def generate_for_approach(
 
     try:
         proposals: list[TestCandidate] = []
+        responses: list[LLMResponse] = []
         for operation in operations:
             facts: Sequence[Mapping[str, Any]] = ()
             if approach is GenerationApproach.SEMANTIC_ASSISTED and semantic_facts_by_operation:
                 facts = semantic_facts_by_operation.get(operation.operation_key, ())
             proposals.extend(
-                generate_llm_candidates(operation, configured_provider, semantic_facts=facts)
+                generate_llm_candidates(
+                    operation,
+                    configured_provider,
+                    semantic_facts=facts,
+                    on_response=responses.append,
+                )
             )
     except Exception as exc:
         return _fallback_result(
@@ -148,6 +166,19 @@ def generate_for_approach(
             else None
         ),
         semantic_fact_count=semantic_count,
+        llm_provider=(
+            responses[0].provider
+            if responses
+            else getattr(configured_provider, "provider_name", None)
+        ),
+        llm_model=(
+            responses[0].model if responses else getattr(configured_provider, "model_name", None)
+        ),
+        llm_token_usage=(
+            sum(response.total_tokens or 0 for response in responses)
+            if responses and all(response.total_tokens is not None for response in responses)
+            else None
+        ),
     )
 
 

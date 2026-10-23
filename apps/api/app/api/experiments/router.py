@@ -219,10 +219,13 @@ def _campaign_metrics(db: Session, experiment: Experiment, run: ExperimentRun) -
         "generation_duration_ms": _metric(run.generation_metadata.get("generation_duration_ms")),
         "execution_duration_ms": _metric(duration_ms),
         "llm_token_usage": _metric(
-            None, "Provider token usage is not exposed by the current adapter."
+            run.generation_metadata.get("llm_token_usage"),
+            "Provider did not return complete token usage for this run."
+            if run.generation_metadata.get("llm_token_usage") is None
+            else None,
         ),
         "estimated_provider_cost": _metric(
-            None, "Provider pricing and token usage are unavailable."
+            None, "Provider pricing is not maintained, so cost cannot be estimated."
         ),
         "diagnosis_accuracy": _metric(None, "No ground-truth failure labels are recorded."),
         "reproducibility_rate": _metric(
@@ -293,6 +296,8 @@ def create_experiment(
         "approaches": [approach.value for approach in payload.approaches],
         "categories": [category.value for category in payload.categories],
         "use_llm": payload.use_llm,
+        "llm_provider": payload.llm_provider,
+        "llm_model": payload.llm_model,
         "budgets": {
             "max_executions_per_approach": payload.max_executions,
             "max_iterations_per_approach": payload.max_iterations,
@@ -349,6 +354,8 @@ def create_experiment(
             normalized_operations,
             semantic_facts_by_operation=facts_by_operation,
             allow_llm=payload.use_llm,
+            llm_provider_name=payload.llm_provider,
+            llm_model_name=payload.llm_model,
         )
         generation_duration_ms = round((perf_counter() - generation_started) * 1000)
         candidates_by_operation: dict[str, list[Any]] = {}
@@ -465,6 +472,9 @@ def create_experiment(
                     "semantic_fact_count": generation.semantic_fact_count,
                     "semantic_facts_supplied_to_model": generation.generation_mode == "llm"
                     and approach is GenerationApproach.SEMANTIC_ASSISTED,
+                    "llm_provider": generation.llm_provider,
+                    "llm_model": generation.llm_model,
+                    "llm_token_usage": generation.llm_token_usage,
                     "generated_candidate_count": len(generation.candidates),
                     "persisted_candidate_count": case_limit,
                     "generation_duration_ms": generation_duration_ms,

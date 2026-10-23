@@ -1,4 +1,5 @@
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,9 +16,12 @@ class Settings(BaseSettings):
     # Fernet key used to encrypt environment secrets at rest.
     secret_encryption_key: SecretStr | None = None
 
-    # NVIDIA Build LLM provider.
+    # Optional OpenAI-compatible LLM providers. API keys stay on the backend.
+    llm_provider: Literal["nvidia", "groq"] = "nvidia"
     nvidia_api_key: SecretStr | None = None
-    nvidia_model: str = "openai/gpt-oss-20b"
+    nvidia_model: str = Field(default="openai/gpt-oss-20b", min_length=1, max_length=160)
+    groq_api_key: SecretStr | None = None
+    groq_model: str = Field(default="llama-3.3-70b-versatile", min_length=1, max_length=160)
 
     app_name: str = "API Intelligence Platform API"
     app_env: str = "development"
