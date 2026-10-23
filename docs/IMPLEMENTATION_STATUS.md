@@ -1,5 +1,13 @@
 # IntelAPI — Implementation Status
 
+## Current verification update — 2026-10-24
+
+The scaffold audit below is historical and predates the implementation on `final-version`. The current branch includes persisted project/specification/request/environment resources, bounded request and candidate execution, deterministic generation reports, health-check workflows, campaign jobs/events and a worker, plus the connected Workspace flow. Collections are project-owned records and saved requests reference them by ID.
+
+Verified in this update: changed API files passed Ruff; Python compileall passed; Alembic upgraded to head on fresh SQLite; API OpenAPI route registration passed; `pytest tests/test_models.py -q` passed (4 tests); and web typecheck/lint/build passed. `tests/test_persistence_routes.py` did not complete in this Windows session and was interrupted; Docker Compose could not start because the Docker Desktop Linux engine was unavailable. A live PostgreSQL/API/worker demo therefore remains unverified here. Latest application change is commit `fe11334` on `final-version`; `main` was not merged.
+
+To demo the full local stack, follow `docs/LOCAL_RUNBOOK.md` on a machine with Docker Desktop running, configure the required local environment values, then use its Compose startup and demo path. An external API target is needed to show real request/response behavior.
+
 **Status snapshot:** 2026-10-16
 **Repository:** `https://github.com/ShukuNinja/IntelAPI.git`
 **Canonical local path used for the last verification:** `D:\Pinnacle\api-intelligence-platform-stage1`

@@ -32,7 +32,7 @@ The backend is a modular monolith. Do not introduce microservices, Kubernetes, R
 
 ## Project status
 
-The current product has working vertical slices for OpenAPI/Swagger parsing, deterministic candidate previews and reports, persisted single-user projects/specifications, and bounded HTTP request execution with project history. PostgreSQL-backed authentication, discovery from remote docs URLs, saved request collections/environments, durable generation reports, candidate execution and assertions, feedback policies, readiness/drift analysis, and report exports remain incomplete. The Overview, campaigns, findings, and health destinations still contain demo-backed presentation and must not be read as evidence from live APIs.
+The `final-version` branch contains a runnable local demo workflow for importing OpenAPI files, generating deterministic test candidates, executing bounded HTTP requests, reviewing persisted reports/history, managing saved requests and collections, and running durable campaigns through a separate worker. Environment secrets are encrypted at rest. Authentication remains single-user development mode, and the campaign worker/PostgreSQL stack has not been live-verified on this machine because Docker Desktop was unavailable. Overview, findings, and health views may include demo-backed presentation; treat only persisted API results as live target evidence.
 
 The implementation-status document records what was verified, what remains missing, and the commands to re-check the working tree. Do not treat demo data, demo health indicators, or sample findings as observations about real target APIs.
 
