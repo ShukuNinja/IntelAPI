@@ -8,8 +8,9 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 - [x] Parse OpenAPI 3.0.x/3.1.x JSON/YAML and Swagger 2.0 JSON/YAML; normalize operations, inherit path parameters, and enforce a 2 MB content cap (16 focused tests passed).
 - [x] Produce deterministic, explainable schema-based candidate previews with operation-scoped IDs and request/report budgets.
 - [x] Generate an endpoint-wise candidate preview report (maximum 100 operations and 500 candidates); it is not persisted.
-- [x] Explorer UI imports JSON/YAML files or pasted content, browses actual operations, previews candidates, and displays the generation report. Frontend typecheck/lint/build pass. Data is session-only.
-- [ ] PostgreSQL persistence, auth, saved requests, execution history, and migrations from an empty database.
+- [x] Local single-user project and specification persistence endpoints, deduplication, reload endpoint, Alembic migration, and in-memory SQLite route tests (3 passed). Migrations from an empty SQLite database passed; PostgreSQL runtime persistence is not verified.
+- [x] Explorer UI creates/selects a project, imports JSON/YAML files or pasted content, saves and reloads stored specifications, browses actual operations, previews candidates, and displays the generation report. Frontend typecheck/lint/build pass.
+- [ ] PostgreSQL-backed deployment verification, real authentication, saved requests, execution history, and cross-restart persistence.
 - [ ] Safe spec URL/docs-UI discovery and fetch, SSRF policy, `$ref` resolution policy reporting, and persistence.
 - [ ] Candidate persistence/validation, feedback policy, bounded execution, assertions, drift/readiness analyzers, execution reports, and exports.
 - [ ] Remaining frontend workflows connected to backend routes; other pages are still demo-backed.
@@ -19,8 +20,11 @@ Status checked 2026-10-24. This is an operational checklist; a checked item requ
 
 - `python -m compileall -q app tests` — passed (Python 3.13 syntax compilation).
 - `apps/api/.venv/Scripts/python.exe -m pytest tests/test_api_understanding.py -q` — 16 passed.
-- Full backend suite, previous run — 8 passed, 4 errors. Existing `test_models.py` setup could not authenticate to the local PostgreSQL server with the configured database credentials; `.env` was left untouched. Full suite not rerun in this increment.
+- `apps/api/.venv/Scripts/python.exe -m pytest tests/test_persistence_routes.py -q` — 3 passed using isolated in-memory SQLite; 1 upstream Starlette/httpx deprecation warning.
+- `DATABASE_URL=sqlite+pysqlite:///:memory: alembic upgrade head` — passed from an empty SQLite database.
+- Full backend suite — 21 passed, 4 errors. The four existing PostgreSQL model tests cannot authenticate to the configured local database; `.env` was left untouched. Persistence route tests use isolated SQLite and pass.
 - `apps/api/.venv/Scripts/ruff.exe check app/modules/api_understanding tests/test_api_understanding.py` — passed.
+- `apps/api/.venv/Scripts/ruff.exe check app tests alembic` — rerun after import cleanup.
 - `npm run typecheck` — passed.
 - `npm run lint` — passed.
 - `npm run build` — passed (Vite production build completed).

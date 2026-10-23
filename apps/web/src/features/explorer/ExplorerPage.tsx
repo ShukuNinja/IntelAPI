@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { FileSearch2, Search, UploadCloud } from 'lucide-react'
+import { useEffect, useMemo, useState } from 'react'
+import { Database, FileSearch2, FolderPlus, Search, UploadCloud } from 'lucide-react'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { Panel } from '../../components/ui/Panel'
 import { Button } from '../../components/ui/Button'
@@ -11,6 +11,9 @@ type Operation = { id: string; method: string; path: string; summary: string; de
 type ParsedSpec = { specification: { title: string; version: string }; operations: Operation[] }
 type Candidate = { id: string; kind: string; reason: string; mutation: Record<string, unknown>; validation_status: string }
 type GenerationReport = { policy_version: string; summary: { operation_count: number; candidate_count: number; endpoints_with_candidates: number; truncated: boolean }; endpoints: { operation: Operation; candidate_count: number; candidates: Candidate[] }[] }
+type Project = { id: string; name: string; description: string | null }
+type SavedSpecification = { id: string; title: string; version: string; content_hash: string; created_at: string; operation_count: number }
+type SavedSpecificationDetail = { id: string; title: string; version: string; source_format: 'json' | 'yaml'; document: Record<string, unknown>; operations: Operation[] }
 
 export function ExplorerPage() {
   const [source, setSource] = useState('')
@@ -22,7 +25,61 @@ export function ExplorerPage() {
   const [report, setReport] = useState<GenerationReport | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [projectId, setProjectId] = useState('')
+  const [projectName, setProjectName] = useState('')
+  const [savedSpecs, setSavedSpecs] = useState<SavedSpecification[]>([])
+  const [saveMessage, setSaveMessage] = useState('')
+  const [saving, setSaving] = useState(false)
   const visible = useMemo(() => parsed?.operations.filter(op => `${op.method} ${op.path} ${op.summary} ${op.tags.join(' ')}`.toLowerCase().includes(filter.toLowerCase())) ?? [], [parsed, filter])
+
+  useEffect(() => {
+    void apiRequest<Project[]>('/v1/projects').then(items => {
+      setProjects(items)
+      if (items[0]) setProjectId(items[0].id)
+    }).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load projects.'))
+  }, [])
+
+  useEffect(() => {
+    if (!projectId) { setSavedSpecs([]); return }
+    void apiRequest<SavedSpecification[]>(`/v1/projects/${projectId}/specifications`)
+      .then(setSavedSpecs)
+      .catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load saved specifications.'))
+  }, [projectId])
+
+  async function createProject() {
+    if (!projectName.trim()) return
+    setBusy(true); setError('')
+    try {
+      const project = await apiRequest<Project>('/v1/projects', { method: 'POST', body: JSON.stringify({ name: projectName.trim() }) })
+      setProjects(current => [...current, project]); setProjectId(project.id); setProjectName('')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to create project.') }
+    finally { setBusy(false) }
+  }
+
+  async function saveSpecification() {
+    if (!parsed || !projectId) return
+    setSaving(true); setError(''); setSaveMessage('')
+    try {
+      const imported = await apiRequest<{ created: boolean; title: string; operations: Operation[] }>(`/v1/projects/${projectId}/specifications/import`, {
+        method: 'POST', body: JSON.stringify({ content: source, source_format: sourceFormat }),
+      })
+      setSaveMessage(imported.created ? 'Specification saved to this project.' : 'This specification is already saved in this project.')
+      setSavedSpecs(await apiRequest<SavedSpecification[]>(`/v1/projects/${projectId}/specifications`))
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save specification.') }
+    finally { setSaving(false) }
+  }
+
+  async function openSavedSpecification(specificationId: string) {
+    if (!projectId) return
+    setError('')
+    try {
+      const saved = await apiRequest<SavedSpecificationDetail>(`/v1/projects/${projectId}/specifications/${specificationId}`)
+      setParsed({ specification: { title: saved.title, version: saved.version }, operations: saved.operations })
+      setSource(JSON.stringify(saved.document, null, 2)); setSourceFormat('json')
+      setSelected(null); setReport(null); setCandidates([]); setSaveMessage('Loaded from the selected project.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to load saved specification.') }
+  }
 
   async function parse(text = source, format = sourceFormat) {
     setBusy(true); setError(''); setCandidates([]); setReport(null)
@@ -55,6 +112,14 @@ export function ExplorerPage() {
 
   return <>
     <PageHeader eyebrow="API UNDERSTANDING" title="API Explorer" description="Import an OpenAPI or Swagger document and inspect normalized operations and deterministic candidate ideas." />
+    <Panel title="Project workspace" subtitle="Projects and imported API specifications are stored in the configured database.">
+      <div className="flex flex-wrap items-end gap-3 p-4">
+        <label className="min-w-56 flex-1 text-xs text-slate-300">Active project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Choose a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label className="min-w-48 flex-1 text-xs text-slate-300">New project<input className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" value={projectName} onChange={event => setProjectName(event.target.value)} placeholder="e.g. Payments API" /></label>
+        <Button variant="secondary" onClick={() => void createProject()} disabled={busy || !projectName.trim()}><FolderPlus size={15} />Create project</Button>
+      </div>
+      {projectId && <div className="border-t border-slate-800 px-4 py-3"><div className="mb-2 flex items-center gap-2 text-xs text-slate-300"><Database size={14} />Saved specifications</div>{savedSpecs.length ? <div className="flex flex-wrap gap-2">{savedSpecs.map(spec => <Button key={spec.id} variant="secondary" onClick={() => void openSavedSpecification(spec.id)}>{spec.title} · {spec.operation_count} operations</Button>)}</div> : <p className="m-0 text-xs text-slate-500">No specifications saved in this project yet.</p>}</div>}
+    </Panel>
     <Panel title="Import API specification" subtitle="Accepts OpenAPI 3.0/3.1 JSON or YAML and Swagger 2.0 JSON or YAML. Processing runs through the configured IntelAPI backend.">
       <div className="p-4">
         <div className="mb-2 flex items-center gap-3"><label className="text-xs text-slate-300" htmlFor="openapi-content">Specification content</label><select aria-label="Specification format" className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs text-slate-200" value={sourceFormat} onChange={event => setSourceFormat(event.target.value as 'json' | 'yaml')}><option value="json">JSON</option><option value="yaml">YAML</option></select></div>
@@ -70,7 +135,8 @@ export function ExplorerPage() {
     {parsed ? <>
       <div className="explorer-summary mt-4"><div className="explorer-summary__icon"><FileSearch2 size={21} /></div><div><strong>{parsed.specification.title}</strong><p>Parsed from supplied document · {parsed.specification.version}</p></div><div className="explorer-summary__stats"><span><strong>{parsed.operations.length}</strong> operations</span><Badge tone="info">Current session</Badge></div></div>
       <div className="my-3 flex justify-end"><Button variant="primary" disabled={parsed.operations.length === 0 || parsed.operations.length > 100} onClick={() => void generateReport()}><FileSearch2 size={15} />Generate candidates report</Button></div>
-      <Panel title="Operations" subtitle="Parsed from this document in the current session; not saved to the database." action={<div className="search-field"><Search size={15} /><input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Filter operations…" aria-label="Filter operations" /></div>}>
+      <div className="my-3 flex flex-wrap items-center justify-between gap-3"><Button variant="secondary" onClick={() => void saveSpecification()} disabled={saving || !projectId}><Database size={15} />{saving ? 'Saving…' : 'Save to project'}</Button>{saveMessage && <span role="status" className="text-xs text-emerald-300">{saveMessage}</span>}</div>
+      <Panel title="Operations" subtitle="Parsed from the imported document; save it to the selected project to keep it available across sessions." action={<div className="search-field"><Search size={15} /><input value={filter} onChange={event => setFilter(event.target.value)} placeholder="Filter operations…" aria-label="Filter operations" /></div>}>
         <div className="table-wrap"><table><thead><tr><th>METHOD</th><th>PATH</th><th>SUMMARY</th><th>TAGS</th><th /></tr></thead><tbody>{visible.map(operation => <tr key={operation.id}><td><MethodBadge method={operation.method} /></td><td><code className="path-code">{operation.path}</code></td><td>{operation.summary || operation.description}</td><td className="muted-cell">{operation.tags.join(', ')}</td><td><Button variant="secondary" onClick={() => void preview(operation)}>Preview tests</Button></td></tr>)}</tbody></table>{visible.length === 0 && <div className="table-empty">No operations match this filter.</div>}</div>
       </Panel>
       {report && <Panel title={`Generation report · ${report.policy_version}`} subtitle={`${report.summary.candidate_count} actual candidates across ${report.summary.endpoints_with_candidates} of ${report.summary.operation_count} endpoints. Preview is session-only.`}>

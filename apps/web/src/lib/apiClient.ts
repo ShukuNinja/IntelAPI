@@ -1,6 +1,6 @@
 /**
  * Central API boundary. Keep UI components independent of transport details.
- * The backend is not implemented yet, so pages currently use demoData.ts.
+ * Pages use this transport boundary for real backend workflows.
  */
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -28,7 +28,12 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
 
   if (!response.ok) {
     const requestId = response.headers.get('x-request-id') ?? undefined
-    const message = `API request failed (${response.status})`
+    let message = `API request failed (${response.status})`
+    try {
+      const body = (await response.json()) as { detail?: unknown; message?: unknown }
+      if (typeof body.detail === 'string') message = body.detail
+      else if (typeof body.message === 'string') message = body.message
+    } catch { /* Keep the HTTP status message when the server returns no JSON body. */ }
     throw new ApiError(message, response.status, requestId)
   }
 
