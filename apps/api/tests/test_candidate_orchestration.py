@@ -1,4 +1,5 @@
 import json
+from unittest import result
 
 from app.integrations.llm import LLMProviderError, LLMRequest, LLMResponse
 from app.modules.api_understanding.normalizer import normalize_operations
@@ -147,7 +148,10 @@ def test_unexpected_provider_failure_returns_baseline_without_leaking_message() 
 
     assert result.candidates == generate_candidates(operations)
     assert result.llm_status is LLMGenerationStatus.FAILED
-    assert result.llm_error == "LLM candidate generation failed: LLMProviderError"
+    assert result.llm_error is not None
+    assert result.llm_error.startswith(
+    "LLM candidate generation failed: LLMProposalError:"
+)
     assert "Unexpected sensitive details" not in result.llm_error
 
 

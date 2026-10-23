@@ -55,6 +55,6 @@ export const specificationService = {
     return apiRequest<KnowledgeFact[]>(`/v1/operations/${operationId}/knowledge-facts`)
   },
   preview(operationId: string) {
-    return apiRequest<CandidatePreview>(`/v1/operations/${operationId}/candidates/preview`, { method: 'POST', body: JSON.stringify({}) })
+    return apiRequest<CandidatePreview>(`/v1/operations/${operationId}/candidates/preview`, { method: 'POST', body: JSON.stringify({llm: true}) })
   },
 }

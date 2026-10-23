@@ -3,6 +3,7 @@
 import hashlib
 import json
 from typing import Any
+from urllib import response
 
 from app.integrations.llm import (
     LLMProvider,
@@ -17,11 +18,13 @@ from app.modules.test_generation.validation import (
     CandidateValidationError,
     validate_candidate,
 )
+import logging
 
+logger = logging.getLogger(__name__)
 MAX_PROMPT_BYTES = 32 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_PROPOSALS = 50
-MAX_OUTPUT_TOKENS = 4096
+MAX_OUTPUT_TOKENS = 1200
 MAX_JSON_DEPTH = 32
 
 
@@ -90,6 +93,23 @@ def _check_json_depth(value: Any, depth: int = 0) -> None:
         for child in value:
             _check_json_depth(child, depth + 1)
 
+def _normalize_json_response(response_text: str) -> str:
+    """Remove a single surrounding Markdown JSON code fence."""
+    text = response_text.strip()
+
+    if not text.startswith("```"):
+        return text
+
+    lines = text.splitlines()
+
+    if len(lines) < 3 or lines[-1].strip() != "```":
+        return text
+
+    opening_fence = lines[0].strip().lower()
+    if opening_fence not in {"```", "```json"}:
+        return text
+
+    return "\n".join(lines[1:-1]).strip()
 
 def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
     """Parse a bounded JSON array, rejecting unexpected structures."""
@@ -105,15 +125,27 @@ def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
         raise LLMProposalError("LLM response exceeds the size limit.")
 
     try:
+        normalized_text = _normalize_json_response(response_text)
+
         parsed = json.loads(
-            response_text,
-            parse_constant=_reject_json_constant,
-        )
+    normalized_text,
+    parse_constant=_reject_json_constant,
+)
         _check_json_depth(parsed)
     except LLMProposalError:
         raise
     except (json.JSONDecodeError, ValueError, RecursionError) as exc:
-        raise LLMProposalError("LLM response must contain valid, bounded JSON.") from exc
+        if isinstance(exc, json.JSONDecodeError):
+            detail = (
+                f"JSON parsing failed at line {exc.lineno}, "
+                f"column {exc.colno}."
+            )
+        else:
+            detail = f"JSON parsing failed ({type(exc).__name__})."
+
+        raise LLMProposalError(
+            f"LLM response must contain valid, bounded JSON. {detail}"
+        ) from exc
 
     if not isinstance(parsed, list):
         raise LLMProposalError("LLM response must be a JSON array.")
@@ -208,6 +240,12 @@ def generate_llm_candidates(
 
     if not isinstance(response, LLMResponse):
         raise LLMProviderError("The LLM provider returned an invalid response.")
+
+    logger.warning(
+        "LLM response diagnostic: length=%d, prefix=%r",
+        len(response.text),
+        response.text[:200],
+    )
 
     proposals = _parse_proposals(response.text)
 
