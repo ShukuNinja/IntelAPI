@@ -11,7 +11,7 @@ from app.models.finding_triage import FindingTriageRecord
 from app.models.generation_report import GenerationReportRecord
 from app.models.health_check import HealthCheckRecord
 from app.models.project import Project
-from app.models.request_resource import Environment, SavedRequest
+from app.models.request_resource import Collection, Environment, SavedRequest
 from app.models.specification import ApiSpecification
 from app.models.user import User
 
@@ -25,6 +25,7 @@ __all__ = [
     "CampaignEventRecord",
     "CampaignJobRecord",
     "CampaignRecord",
+    "Collection",
     "GenerationReportRecord",
     "Environment",
     "Project",

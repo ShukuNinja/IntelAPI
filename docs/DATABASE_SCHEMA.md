@@ -183,15 +183,7 @@ Health-check run history uses `executions` plus `assertion_results`; do not add 
 
 ## 4. Migration order
 
-The current baseline has `0001_initial` as an effectively empty head. Inspect `alembic history`, `alembic heads`, and `alembic current` before writing revisions. Do not rename or rewrite applied revisions.
-
-1. `0002_identity_projects.py`: `users`, `sessions`, `projects`; core UUID/timestamp conventions and indexes.
-2. `0003_workspace_assets.py`: `collections`, `saved_requests`, `environments`, `environment_variables`.
-3. `0004_execution_api_understanding.py`: `executions`, `assertion_results`, `api_specifications`, `api_operations`, `knowledge_facts`, `health_checks`; add any deferred nullable FKs after their target tables exist.
-4. `0005_testing_campaigns.py`: `campaigns`, `campaign_jobs`, `test_cases`, `campaign_events`; add execution-to-campaign/test-case FKs only after those tables exist. Within one migration, create tables in dependency order or add FKs after table creation.
-5. `0006_findings_evidence.py`: `findings`, `evidence_references`; add deferred cross-links and check constraints.
-
-These are logical groups, not immutable filenames. If the actual revision graph or FK cycle requires splitting a group, Developer A may create additional sequential revisions while preserving this dependency order and updating this document in the same PR. Never create multiple heads for convenience.
+`0001_initial` is the empty baseline. Applied revisions are sequential and must not be renamed or rewritten. Current domain milestones include `0002_identity_projects`, `0003_api_specifications`, `0004_execution_records`, `0005_generation_reports`, `0006_specification_source_url`, `0007_execution_reports`, `0008_request_resources`, `0009_finding_triage`, `0010_health_checks`, `0011_environment_secrets`, `0012_campaigns`, and `0013_collections`. Add future revisions after inspecting `alembic history`, `alembic heads`, and `alembic current`; preserve a single head and update this document alongside schema changes.
 
 ## 5. Required indexes and constraints checklist
 

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.secret_storage import SecretStorageError, encrypt_environment_values
 from app.db.session import get_db
-from app.models import Environment, Project, SavedRequest, User
+from app.models import Collection, Environment, Project, SavedRequest, User
 from app.modules.projects.router import LOCAL_USER_SUB
 
 router = APIRouter(prefix="/projects/{project_id}", tags=["request-resources"])
@@ -42,6 +42,7 @@ def _project(db: Session, project_id: UUID) -> Project:
 class SavedRequestInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     collection_name: str | None = Field(default=None, max_length=120)
+    collection_id: UUID | None = None
     method: Literal["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"]
     url: str = Field(min_length=8, max_length=4096)
     headers: dict[str, str] = Field(default_factory=dict, max_length=100)
@@ -111,7 +112,8 @@ def _saved_response(record: SavedRequest) -> dict[str, Any]:
         "id": str(record.id),
         "project_id": str(record.project_id),
         "name": record.name,
-        "collection_name": record.collection_name,
+        "collection_id": str(record.collection_id) if record.collection_id else None,
+        "collection_name": record.collection.name if record.collection else None,
         "method": record.method,
         "url": record.url,
         "headers": record.headers,
@@ -154,7 +156,7 @@ def list_saved_requests(
         for record in db.scalars(
             select(SavedRequest)
             .where(SavedRequest.project_id == project.id)
-            .order_by(SavedRequest.collection_name, SavedRequest.name)
+            .order_by(SavedRequest.name)
         )
     ]
 
@@ -166,7 +168,11 @@ def create_saved_request(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     project = _project(db, project_id)
-    record = SavedRequest(project_id=project.id, **payload.model_dump())
+    data = payload.model_dump(exclude={"collection_name", "collection_id"})
+    collection_id = _resolve_collection_id(
+        db, project.id, payload.collection_id, payload.collection_name
+    )
+    record = SavedRequest(project_id=project.id, collection_id=collection_id, **data)
     db.add(record)
     db.commit()
     db.refresh(record)
@@ -188,11 +194,140 @@ def update_saved_request(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Saved request not found.")
-    for key, value in payload.model_dump().items():
+    data = payload.model_dump(exclude={"collection_name", "collection_id"})
+    record.collection_id = _resolve_collection_id(
+        db, project.id, payload.collection_id, payload.collection_name
+    )
+    for key, value in data.items():
         setattr(record, key, value)
     db.commit()
     db.refresh(record)
     return _saved_response(record)
+
+
+def _resolve_collection_id(
+    db: Session, project_id: UUID, collection_id: UUID | None, collection_name: str | None
+) -> UUID | None:
+    if collection_id is not None:
+        collection = db.scalar(
+            select(Collection).where(
+                Collection.id == collection_id, Collection.project_id == project_id
+            )
+        )
+        if collection is None:
+            raise HTTPException(status_code=404, detail="Collection not found in this project.")
+        return collection.id
+    if collection_name:
+        collection = db.scalar(
+            select(Collection).where(
+                Collection.project_id == project_id, Collection.name == collection_name
+            )
+        )
+        if collection is None:
+            collection = Collection(project_id=project_id, name=collection_name)
+            db.add(collection)
+            db.flush()
+        return collection.id
+    return None
+
+
+class CollectionInput(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    description: str | None = Field(default=None, max_length=2000)
+
+    @field_validator("name")
+    @classmethod
+    def strip_collection_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Collection name cannot be blank.")
+        return value
+
+
+def _collection_response(record: Collection) -> dict[str, Any]:
+    return {
+        "id": str(record.id),
+        "project_id": str(record.project_id),
+        "name": record.name,
+        "description": record.description,
+        "created_at": record.created_at.isoformat(),
+        "updated_at": record.updated_at.isoformat(),
+    }
+
+
+@router.get("/collections")
+def list_collections(
+    project_id: UUID, db: Annotated[Session, Depends(get_db)]
+) -> list[dict[str, Any]]:
+    project = _project(db, project_id)
+    return [
+        _collection_response(item)
+        for item in db.scalars(
+            select(Collection).where(Collection.project_id == project.id).order_by(Collection.name)
+        )
+    ]
+
+
+@router.post("/collections", status_code=status.HTTP_201_CREATED)
+def create_collection(
+    project_id: UUID, payload: CollectionInput, db: Annotated[Session, Depends(get_db)]
+) -> dict[str, Any]:
+    project = _project(db, project_id)
+    record = Collection(project_id=project.id, **payload.model_dump())
+    db.add(record)
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="A collection with this name already exists."
+        ) from exc
+    db.refresh(record)
+    return _collection_response(record)
+
+
+@router.put("/collections/{collection_id}")
+def update_collection(
+    project_id: UUID,
+    collection_id: UUID,
+    payload: CollectionInput,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    project = _project(db, project_id)
+    record = db.scalar(
+        select(Collection).where(
+            Collection.id == collection_id, Collection.project_id == project.id
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    record.name = payload.name
+    record.description = payload.description
+    try:
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409, detail="A collection with this name already exists."
+        ) from exc
+    db.refresh(record)
+    return _collection_response(record)
+
+
+@router.delete("/collections/{collection_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_collection(
+    project_id: UUID, collection_id: UUID, db: Annotated[Session, Depends(get_db)]
+) -> None:
+    project = _project(db, project_id)
+    record = db.scalar(
+        select(Collection).where(
+            Collection.id == collection_id, Collection.project_id == project.id
+        )
+    )
+    if record is None:
+        raise HTTPException(status_code=404, detail="Collection not found.")
+    db.delete(record)
+    db.commit()
 
 
 @router.delete("/saved-requests/{request_id}", status_code=status.HTTP_204_NO_CONTENT)

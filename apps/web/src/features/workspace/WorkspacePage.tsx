@@ -7,7 +7,8 @@ import { Panel } from '../../components/ui/Panel'
 import { apiRequest } from '../../lib/apiClient'
 
 type Project = { id: string; name: string; description: string | null }
-type SavedRequest = { id: string; name: string; collection_name: string | null; method: string; url: string; headers: Record<string, string>; body: string | null }
+type Collection = { id: string; name: string }
+type SavedRequest = { id: string; name: string; collection_id: string | null; collection_name: string | null; method: string; url: string; headers: Record<string, string>; body: string | null }
 type Environment = { id: string; name: string; base_url: string | null; variables: Record<string, string>; secrets: Record<string, { has_value: boolean }> }
 type Execution = {
   id: string; status_code: number; elapsed_ms: number; response_bytes: number
@@ -29,11 +30,13 @@ export function WorkspacePage() {
   const [projectId, setProjectId] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
   const [savedRequests, setSavedRequests] = useState<SavedRequest[]>([])
+  const [collections, setCollections] = useState<Collection[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
   const [selectedRequestId, setSelectedRequestId] = useState('')
   const [selectedEnvironmentId, setSelectedEnvironmentId] = useState('')
   const [requestName, setRequestName] = useState('')
-  const [collectionName, setCollectionName] = useState('')
+  const [collectionId, setCollectionId] = useState('')
+  const [newCollectionName, setNewCollectionName] = useState('')
   const [newEnvironmentName, setNewEnvironmentName] = useState('')
   const [newEnvironmentBaseUrl, setNewEnvironmentBaseUrl] = useState('')
   const [newEnvironmentVariables, setNewEnvironmentVariables] = useState('{\n  "region": "us-east-1"\n}')
@@ -62,11 +65,12 @@ export function WorkspacePage() {
   }, [projectId])
 
   useEffect(() => {
-    if (!projectId) { setSavedRequests([]); setEnvironments([]); setSelectedEnvironmentId(''); return }
+    if (!projectId) { setSavedRequests([]); setCollections([]); setEnvironments([]); setSelectedEnvironmentId(''); return }
     void Promise.all([
       apiRequest<SavedRequest[]>(`/v1/projects/${projectId}/saved-requests`),
+      apiRequest<Collection[]>(`/v1/projects/${projectId}/collections`),
       apiRequest<Environment[]>(`/v1/projects/${projectId}/environments`),
-    ]).then(([requests, envs]) => { setSavedRequests(requests); setEnvironments(envs) })
+    ]).then(([requests, groups, envs]) => { setSavedRequests(requests); setCollections(groups); setEnvironments(envs) })
       .catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load saved requests and environments.'))
   }, [projectId])
 
@@ -79,7 +83,7 @@ export function WorkspacePage() {
     setHeadersText(JSON.stringify(saved.headers, null, 2))
     setBody(saved.body ?? '')
     setRequestName(saved.name)
-    setCollectionName(saved.collection_name ?? '')
+    setCollectionId(saved.collection_id ?? '')
   }
 
   async function saveRequest() {
@@ -93,12 +97,25 @@ export function WorkspacePage() {
     try {
       const saved = await apiRequest<SavedRequest>(`/v1/projects/${projectId}/saved-requests${selectedRequestId ? `/${selectedRequestId}` : ''}`, {
         method: selectedRequestId ? 'PUT' : 'POST',
-        body: JSON.stringify({ name: requestName.trim(), collection_name: collectionName.trim() || null, method, url, headers, body: body || null }),
+        body: JSON.stringify({ name: requestName.trim(), collection_id: collectionId || null, method, url, headers, body: body || null }),
       })
       setSavedRequests(current => [...current.filter(item => item.id !== saved.id), saved].sort((a, b) => (a.collection_name ?? '').localeCompare(b.collection_name ?? '') || a.name.localeCompare(b.name)))
       setSelectedRequestId(saved.id)
       setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save the request.') }
+  }
+
+  async function createCollection() {
+    if (!projectId || !newCollectionName.trim()) { setError('Select a project and enter a collection name.'); return }
+    try {
+      const collection = await apiRequest<Collection>(`/v1/projects/${projectId}/collections`, {
+        method: 'POST', body: JSON.stringify({ name: newCollectionName.trim() }),
+      })
+      setCollections(current => [...current, collection].sort((a, b) => a.name.localeCompare(b.name)))
+      setCollectionId(collection.id)
+      setNewCollectionName('')
+      setError('')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to create collection.') }
   }
 
   async function createEnvironment() {
@@ -153,7 +170,8 @@ export function WorkspacePage() {
       <div className="grid gap-4 p-4">
         <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Select a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 md:grid-cols-[1fr_1fr_auto]"><label className="text-xs text-slate-300">Saved request<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedRequestId} onChange={event => applySavedRequest(event.target.value)}><option value="">New request…</option>{savedRequests.map(item => <option key={item.id} value={item.id}>{item.collection_name ? `${item.collection_name} / ` : ''}${item.name}</option>)}</select></label><label className="text-xs text-slate-300">Environment<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedEnvironmentId} onChange={event => setSelectedEnvironmentId(event.target.value)}><option value="">No environment</option>{environments.map(item => <option key={item.id} value={item.id}>{item.name}{Object.keys(item.secrets ?? {}).length ? ` · ${Object.keys(item.secrets).length} secret(s)` : ''}</option>)}</select></label><div className="flex items-end"><Button size="sm" onClick={() => { setShowEnvironmentForm(value => !value); setError('') }}>{showEnvironmentForm ? 'Close' : 'New environment'}</Button></div>
-          <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_1fr_auto]"><input aria-label="Saved request name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={requestName} onChange={event => setRequestName(event.target.value)} placeholder="Request name"/><input aria-label="Collection name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={collectionName} onChange={event => setCollectionName(event.target.value)} placeholder="Collection (optional)"/><Button size="sm" onClick={() => void saveRequest()}>{selectedRequestId ? 'Update saved request' : 'Save request'}</Button></div>
+          <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_1fr_auto]"><input aria-label="Saved request name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={requestName} onChange={event => setRequestName(event.target.value)} placeholder="Request name"/><select aria-label="Request collection" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={collectionId} onChange={event => setCollectionId(event.target.value)}><option value="">No collection</option>{collections.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><Button size="sm" onClick={() => void saveRequest()}>{selectedRequestId ? 'Update saved request' : 'Save request'}</Button></div>
+          <div className="flex gap-2 md:col-span-3"><input aria-label="New collection name" className="flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newCollectionName} onChange={event => setNewCollectionName(event.target.value)} placeholder="New collection name"/><Button size="sm" onClick={() => void createCollection()}>Create collection</Button></div>
           {showEnvironmentForm && <div className="grid gap-2 border-t border-slate-800 pt-3 md:col-span-3 md:grid-cols-2"><input aria-label="Environment name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentName} onChange={event => setNewEnvironmentName(event.target.value)} placeholder="Environment name"/><input aria-label="Environment base URL" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentBaseUrl} onChange={event => setNewEnvironmentBaseUrl(event.target.value)} placeholder="Base URL, e.g. http://localhost:8000"/><textarea aria-label="Environment variables" className="min-h-20 rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs md:col-span-2" value={newEnvironmentVariables} onChange={event => setNewEnvironmentVariables(event.target.value)} /><textarea aria-label="Write-only environment secrets" className="min-h-20 rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs md:col-span-2" value={newEnvironmentSecrets} onChange={event => setNewEnvironmentSecrets(event.target.value)} placeholder={'{"token":"paste-secret-here"}'} /><div className="flex items-center justify-between text-[11px] text-slate-500 md:col-span-2"><span>Use {'{{baseUrl}}'} and {'{{variableName}}'} in requests. Secrets are encrypted server-side and never returned.</span><Button size="sm" variant="primary" onClick={() => void createEnvironment()}>Save environment</Button></div></div>}
         </div>
         <div className="grid gap-2 sm:grid-cols-[130px_1fr]"><select className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" aria-label="HTTP method" value={method} onChange={event => setMethod(event.target.value)}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(value => <option key={value}>{value}</option>)}</select><input className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm" aria-label="Request URL" value={url} onChange={event => setUrl(event.target.value)} placeholder="http://localhost:8000/api/resource" spellCheck={false} /></div>

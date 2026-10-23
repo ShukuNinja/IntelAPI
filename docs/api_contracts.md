@@ -213,9 +213,8 @@ Archive is soft deletion (`archived_at`/equivalent). MVP does not expose permane
 |---|---|---|
 | `GET /projects/{project_id}/collections` | Pagination | `200 List[CollectionRead]` |
 | `POST /projects/{project_id}/collections` | `{ "name": "Regression", "description": null }` | `201 CollectionRead` |
-| `GET /collections/{collection_id}` | None | `200 CollectionRead` |
-| `PATCH /collections/{collection_id}` | Partial `name`, `description` | `200 CollectionRead` |
-| `DELETE /collections/{collection_id}` | None | `204` |
+| `PUT /projects/{project_id}/collections/{collection_id}` | `{ "name": "Regression", "description": null }` | `200 CollectionRead` |
+| `DELETE /projects/{project_id}/collections/{collection_id}` | None | `204` |
 
 Collection deletion must follow the accepted FK policy and must not cascade-delete execution history. A collection may organize saved requests; requests and executions retain their own project association.
 
