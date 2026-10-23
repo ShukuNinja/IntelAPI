@@ -48,9 +48,7 @@ def generate_candidates_with_llm(
         return CandidateGenerationResult(
             candidates=baseline,
             llm_status=LLMGenerationStatus.FAILED,
-            llm_error=(
-    f"LLM candidate generation failed: {type(exc).__name__}: {exc}"
-            ),
+            llm_error=f"LLM candidate generation failed: {type(exc).__name__}",
         )
 
     if configured_provider is None:
@@ -69,9 +67,7 @@ def generate_candidates_with_llm(
         return CandidateGenerationResult(
             candidates=baseline,
             llm_status=LLMGenerationStatus.FAILED,
-            llm_error=(
-    f"LLM candidate generation failed: {type(exc).__name__}: {exc}"
-),
+            llm_error=f"LLM candidate generation failed: {type(exc).__name__}",
         )
 
     return CandidateGenerationResult(

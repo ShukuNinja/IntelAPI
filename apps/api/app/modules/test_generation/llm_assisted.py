@@ -3,7 +3,6 @@
 import hashlib
 import json
 from typing import Any
-from urllib import response
 
 from app.integrations.llm import (
     LLMProvider,
@@ -18,9 +17,7 @@ from app.modules.test_generation.validation import (
     CandidateValidationError,
     validate_candidate,
 )
-import logging
 
-logger = logging.getLogger(__name__)
 MAX_PROMPT_BYTES = 32 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
 MAX_PROPOSALS = 50
@@ -111,6 +108,7 @@ def _normalize_json_response(response_text: str) -> str:
 
     return "\n".join(lines[1:-1]).strip()
 
+
 def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
     """Parse a bounded JSON array, rejecting unexpected structures."""
     if not isinstance(response_text, str):
@@ -127,10 +125,7 @@ def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
     try:
         normalized_text = _normalize_json_response(response_text)
 
-        parsed = json.loads(
-    normalized_text,
-    parse_constant=_reject_json_constant,
-)
+        parsed = json.loads(normalized_text, parse_constant=_reject_json_constant)
         _check_json_depth(parsed)
     except LLMProposalError:
         raise
@@ -240,12 +235,6 @@ def generate_llm_candidates(
 
     if not isinstance(response, LLMResponse):
         raise LLMProviderError("The LLM provider returned an invalid response.")
-
-    logger.warning(
-        "LLM response diagnostic: length=%d, prefix=%r",
-        len(response.text),
-        response.text[:200],
-    )
 
     proposals = _parse_proposals(response.text)
 
