@@ -2,7 +2,9 @@
 
 import hashlib
 import json
+import re
 from collections.abc import Callable, Mapping, Sequence
+from time import perf_counter
 from typing import Any
 
 from app.integrations.llm import (
@@ -21,10 +23,15 @@ from app.modules.test_generation.validation import (
 
 MAX_PROMPT_BYTES = 32 * 1024
 MAX_RESPONSE_BYTES = 64 * 1024
+MAX_REJECTION_PREVIEW_BYTES = 512
+DEFAULT_CANDIDATE_COUNT = 4
+MAX_CANDIDATE_COUNT = 10
 MAX_PROPOSALS = 50
 MAX_OUTPUT_TOKENS = 1200
 MAX_JSON_DEPTH = 32
-MAX_SEMANTIC_FACTS = 40
+MAX_SEMANTIC_FACTS = 12
+MAX_SEMANTIC_FACT_BYTES = 4096
+ALLOWED_SEMANTIC_FACT_TYPES = {"parameter", "request_body_schema", "response_schema"}
 PROMPT_VERSION = "api-test-generation-v1"
 PROPOSALS_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -72,17 +79,71 @@ def _operation_context(operation: NormalizedOperation) -> dict[str, Any]:
     }
 
 
+def bounded_semantic_facts(
+    semantic_facts: Sequence[Mapping[str, Any]],
+) -> tuple[dict[str, Any], ...]:
+    """Keep a small, validated subset of extracted operation facts for prompting."""
+    result: list[dict[str, Any]] = []
+    for fact in semantic_facts:
+        if not isinstance(fact, Mapping):
+            continue
+        fact_type = fact.get("fact_type")
+        value = fact.get("fact_value")
+        if (
+            not isinstance(fact_type, str)
+            or fact_type not in ALLOWED_SEMANTIC_FACT_TYPES
+            or fact.get("provenance") != "EXTRACTED"
+            or not isinstance(value, dict)
+        ):
+            continue
+        item = {"fact_type": fact_type, "fact_value": value, "provenance": "EXTRACTED"}
+        try:
+            encoded = json.dumps(
+                item,
+                sort_keys=True,
+                separators=(",", ":"),
+                ensure_ascii=False,
+                allow_nan=False,
+            )
+        except (TypeError, ValueError):
+            continue
+        if len(encoded.encode("utf-8")) > MAX_SEMANTIC_FACT_BYTES:
+            continue
+        result.append(item)
+        if len(result) >= MAX_SEMANTIC_FACTS:
+            break
+    return tuple(result)
+
+
+def _safe_rejection_preview(proposal: Mapping[str, Any]) -> str:
+    """Serialize a short rejection excerpt and remove common credential patterns."""
+    try:
+        preview = json.dumps(proposal, ensure_ascii=False, separators=(",", ":"), allow_nan=False)[
+            :MAX_REJECTION_PREVIEW_BYTES
+        ]
+    except (TypeError, ValueError):
+        return "[proposal could not be serialized]"
+    preview = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", preview)
+    preview = re.sub(r"(?i)(gsk_[a-z0-9_-]+|sk-[a-z0-9_-]+)", "[redacted]", preview)
+    return re.sub(
+        r'(?i)("(?:api[_-]?key|authorization|access[_-]?token|password)"\s*:\s*")[^"]*"',
+        r'\1[redacted]"',
+        preview,
+    )
+
+
 def _build_request(
     operation: NormalizedOperation,
     semantic_facts: Sequence[Mapping[str, Any]] = (),
+    candidate_count: int = DEFAULT_CANDIDATE_COUNT,
 ) -> LLMRequest:
     """Build a bounded request that asks for proposals, not execution."""
-    if len(semantic_facts) > MAX_SEMANTIC_FACTS:
-        raise LLMProposalError("Semantic context exceeds the fact count limit.")
-
+    if not 1 <= candidate_count <= MAX_CANDIDATE_COUNT:
+        raise LLMProposalError(f"Candidate count must be between 1 and {MAX_CANDIDATE_COUNT}.")
     context_data: dict[str, Any] = {"operation": _operation_context(operation)}
-    if semantic_facts:
-        context_data["semantic_facts"] = list(semantic_facts)
+    safe_semantic_facts = bounded_semantic_facts(semantic_facts)
+    if safe_semantic_facts:
+        context_data["semantic_facts"] = list(safe_semantic_facts)
     context = json.dumps(
         context_data,
         sort_keys=True,
@@ -107,10 +168,13 @@ def _build_request(
             "object; body_json must be a JSON-encoded object or null. Put all proposals "
             "inside the candidates array. Do not include candidate IDs, "
             "HTTP methods, or paths; these are assigned by the application. "
-            "Return at most 50 items."
+            f"Return no more than {candidate_count} candidates. Prefer fewer or return an empty "
+            "array when the contract does not support a meaningful safe test. Do not invent "
+            "parameters, body fields, or behavior that are absent from the operation."
         ),
         user_prompt=f"Propose test candidates for this operation:\n{context}",
-        max_output_tokens=MAX_OUTPUT_TOKENS,
+        max_output_tokens=min(MAX_OUTPUT_TOKENS, 260 + candidate_count * 180),
+        timeout_seconds=30.0,
         json_schema=PROPOSALS_JSON_SCHEMA,
     )
 
@@ -186,11 +250,11 @@ def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
     if not isinstance(parsed, list):
         raise LLMProposalError("LLM response must contain a candidates JSON array.")
 
-    if len(parsed) > MAX_PROPOSALS:
-        raise LLMProposalError("LLM response exceeds the proposal count limit.")
-
     if any(not isinstance(item, dict) for item in parsed):
         raise LLMProposalError("Every proposal must be a JSON object.")
+
+    if len(parsed) > MAX_PROPOSALS:
+        raise LLMProposalError("LLM response exceeds the proposal count limit.")
 
     return parsed
 
@@ -291,28 +355,101 @@ def generate_llm_candidates(
     semantic_facts: Sequence[Mapping[str, Any]] = (),
     on_response: Callable[[LLMResponse], None] | None = None,
     on_rejection: Callable[[dict[str, Any]], None] | None = None,
+    candidate_count: int = DEFAULT_CANDIDATE_COUNT,
+    max_attempts: int = 2,
+    on_error: Callable[[dict[str, Any]], None] | None = None,
+    on_parse_result: Callable[[bool], None] | None = None,
+    on_validation_result: Callable[[bool], None] | None = None,
+    on_validation_duration: Callable[[int], None] | None = None,
 ) -> tuple[TestCandidate, ...]:
     """Request, validate, and deduplicate LLM proposals without executing them."""
-    request = _build_request(operation, semantic_facts)
+    request = _build_request(operation, semantic_facts, candidate_count)
 
-    try:
-        response = provider.generate(request)
-    except LLMProviderError:
-        raise
-    except Exception as exc:
-        raise LLMProviderError("The LLM provider failed unexpectedly.") from exc
+    if not 1 <= max_attempts <= 3:
+        raise ValueError("max_attempts must be between 1 and 3.")
+    response: LLMResponse | None = None
+    attempt = 0
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = provider.generate(request)
+            break
+        except LLMProviderError as exc:
+            if on_error is not None:
+                diagnostic = exc.diagnostic(
+                    attempt=attempt,
+                    timeout_seconds=request.timeout_seconds,
+                    max_output_tokens=request.max_output_tokens,
+                )
+                diagnostic["retry_scheduled"] = exc.retryable and attempt < max_attempts
+                on_error(diagnostic)
+            if not exc.retryable or attempt >= max_attempts:
+                raise
+            import random
+            import time
 
+            time.sleep(min(0.25 * (2 ** (attempt - 1)) + random.uniform(0, 0.15), 1.0))
+        except Exception as exc:
+            raise LLMProviderError("The LLM provider failed unexpectedly.") from exc
+
+    if response is None:
+        raise LLMProviderError("The LLM provider did not return a completion.")
     if not isinstance(response, LLMResponse):
         raise LLMProviderError("The LLM provider returned an invalid response.")
     if on_response is not None:
         on_response(response)
 
+    validation_started = perf_counter()
     try:
-        proposals = _parse_proposals(response.text)
+        parsed_proposals = _parse_proposals(response.text)
+        if on_rejection is not None:
+            for index, proposal in enumerate(parsed_proposals[candidate_count:], candidate_count):
+                on_rejection(
+                    {
+                        "kind": "candidate",
+                        "index": index,
+                        "reason": "Proposal exceeds the configured candidate count.",
+                        "proposal": _safe_rejection_preview(proposal),
+                    }
+                )
+        proposals = parsed_proposals[:candidate_count]
     except LLMProposalError as exc:
+        if on_parse_result is not None:
+            on_parse_result(False)
+        if on_validation_result is not None:
+            on_validation_result(False)
+        if on_validation_duration is not None:
+            on_validation_duration(round((perf_counter() - validation_started) * 1000))
         if on_rejection is not None:
             on_rejection({"kind": "invalid_response", "reason": str(exc)[:300]})
+        if on_error is not None:
+            on_error(
+                {
+                    "category": (
+                        "output_truncated"
+                        if response.finish_reason == "length"
+                        else "malformed_output"
+                    ),
+                    "message": (
+                        "Completion stopped at the configured output token limit."
+                        if response.finish_reason == "length"
+                        else str(exc)[:300]
+                    ),
+                    "provider": response.provider,
+                    "model": response.model,
+                    "attempt": attempt,
+                    "retryable": False,
+                    "http_status": None,
+                    "failed_generation": None,
+                    "timeout_seconds": request.timeout_seconds,
+                    "max_output_tokens": request.max_output_tokens,
+                    "completion_received": True,
+                    "local_parse_succeeded": False,
+                    "local_validation_succeeded": False,
+                }
+            )
         return ()
+    if on_parse_result is not None:
+        on_parse_result(True)
 
     accepted: list[TestCandidate] = []
     for index, proposal in enumerate(proposals):
@@ -323,12 +460,7 @@ def generate_llm_candidates(
             accepted.append(candidate)
         except LLMProposalError as exc:
             if on_rejection is not None:
-                try:
-                    preview = json.dumps(
-                        proposal, ensure_ascii=False, separators=(",", ":"), allow_nan=False
-                    )[:2000]
-                except (TypeError, ValueError):
-                    preview = "[proposal could not be serialized]"
+                preview = _safe_rejection_preview(proposal)
                 on_rejection(
                     {
                         "kind": "candidate",
@@ -338,4 +470,8 @@ def generate_llm_candidates(
                     }
                 )
 
+    if on_validation_result is not None:
+        on_validation_result(bool(accepted))
+    if on_validation_duration is not None:
+        on_validation_duration(round((perf_counter() - validation_started) * 1000))
     return deduplicate_candidates(accepted)

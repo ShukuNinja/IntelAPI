@@ -33,7 +33,7 @@ def test_groq_provider_uses_compatible_endpoint_and_records_usage(
         base_url=GROQ_BASE_URL,
         api_key="private-test-key",
         timeout=30.0,
-        max_retries=1,
+        max_retries=0,
     )
     assert (response.provider, response.model, response.total_tokens) == ("groq", "test-model", 15)
 
@@ -52,6 +52,7 @@ def test_groq_provider_requests_json_schema_when_provided() -> None:
         "type": "json_schema",
         "json_schema": {"name": "api_test_candidates", "strict": True, "schema": schema},
     }
+    assert client.chat.completions.create.call_args.kwargs["timeout"] == 30.0
 
 
 def test_groq_provider_sanitizes_errors() -> None:
@@ -107,7 +108,9 @@ def test_groq_provider_maps_generated_json_validation_error() -> None:
             "error": {
                 "code": "json_validate_failed",
                 "message": "Failed to validate JSON. Please adjust your prompt.",
-                "failed_generation": "",
+                "failed_generation": (
+                    'Authorization: Bearer secret123 {"api_key":"gsk_secret-value"}'
+                ),
             }
         }
 
@@ -119,3 +122,24 @@ def test_groq_provider_maps_generated_json_validation_error() -> None:
         provider.generate(request())
 
     assert error.value.code == "json_validate_failed"
+    assert error.value.status_code == 400
+    assert error.value.provider == "groq"
+    assert error.value.model == "test-model"
+    assert "secret123" not in (error.value.failed_generation or "")
+    assert "gsk_secret-value" not in (error.value.failed_generation or "")
+    assert "[redacted]" in (error.value.failed_generation or "")
+
+
+def test_failed_generation_diagnostic_is_bounded() -> None:
+    class JsonValidationError(Exception):
+        status_code = 400
+        code = "json_validate_failed"
+        body = {"error": {"code": code, "message": "invalid", "failed_generation": "x" * 2000}}
+
+    client = Mock()
+    client.chat.completions.create.side_effect = JsonValidationError()
+    provider = GroqProvider(api_key="test-key", model="test-model", client=client)
+    with pytest.raises(LLMProviderError) as error:
+        provider.generate(request())
+    assert len(error.value.failed_generation or "") <= 512
+    assert error.value.retryable is False

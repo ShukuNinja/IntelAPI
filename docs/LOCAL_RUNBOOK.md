@@ -39,7 +39,7 @@ Copy-Item .\.env.example .\.env
 
 Review and replace example values with local-only secrets. Do not commit `.env`, OAuth credentials, provider keys, session/encryption keys, database dumps, or real user data. The API has an `apps/api/.env.example` as well; inspect settings and Compose configuration to determine which values are consumed from the root `.env` versus the API process.
 
-For Groq generation, set `LLM_PROVIDER=groq`, `GROQ_API_KEY`, and an active `GROQ_MODEL` in the root `.env`. The current default is `openai/gpt-oss-120b`. Groq retired `llama-3.3-70b-versatile` for free and developer plans on August 16, 2026; after changing provider settings, recreate the API service so it reloads the environment. Provider keys stay server-side.
+For Groq generation, set `LLM_PROVIDER=groq`, `GROQ_API_KEY`, and an active `GROQ_MODEL` in the root `.env`. The current default is `openai/gpt-oss-120b`. `LLM_GENERATION_MAX_ATTEMPTS` controls transient-error retries (default 2, maximum 3); schema-validation 400s are not retried. Experiment setup lets you request 1–10 LLM candidates per operation (default 4). Groq retired `llama-3.3-70b-versatile` for free and developer plans on August 16, 2026; after changing provider settings, recreate the API service so it reloads the environment. Provider keys stay server-side.
 
 `VITE_API_BASE_URL` is a Vite build-time variable. Compose builds the web app with `http://localhost:8000` by default, so browser API calls go directly to the local API service. The API CORS configuration permits the local web origin and credentialed requests. If you change the local ports or origins, update the Vite build argument and API `CORS_ORIGINS` together, then rebuild the web image.
 

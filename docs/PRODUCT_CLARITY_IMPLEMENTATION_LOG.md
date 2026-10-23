@@ -60,3 +60,22 @@
 
 ### Diagnostic limitation
 - The screenshot's original historical response body was not retained by the previous adapter, so that exact provider message cannot be reconstructed. The captured live reproduction proves the `json_validate_failed` path; with the app's real token budget and repaired schema, the same provider/model succeeds.
+
+## 2026-10-23 — Bounded Groq generation and fallback diagnostics
+
+- Confirmed the configured default model is `openai/gpt-oss-120b`. The outgoing candidate schema has a closed object root and candidate object, requires all five contract fields, and uses the documented nullable string union for `body_json`. Groq's current strict-output documentation lists this model and accepts the schema's required/closed-object/nullability pattern.
+- Replaced the vague 50-candidate prompt with an experiment-configurable limit of 1–10 candidates per operation (UI offers 3–5; default 4). The prompt asks for no more than that count and forbids inventing unsupported behavior. Output tokens scale by count and remain capped at 1,200.
+- Bounded Semantic assisted context to 12 per-operation extracted parameter/body/response facts, at 4 KiB each. Inferred facts, security requirement facts, invalid JSON values, and unrecognized fact types are excluded.
+- Groq provider errors now retain HTTP status, provider code/message, model, retryability, and a credential-scrubbed `failed_generation` excerpt capped at 512 characters. Diagnostics include attempt, retry scheduling, timeout/token limits, completion receipt, and local parse/validation outcome. Raw prompts, credentials, and raw completion bodies are not logged.
+- Added at most three configurable total attempts (`LLM_GENERATION_MAX_ATTEMPTS`, default 2) with exponential jitter for transient timeouts/connections, 429s, and 5xx errors. Deterministic 400/schema failures are not retried. The SDK retry is disabled so retry counts remain auditable.
+- Persisted generation errors, retry count, attempt count, requested/accepted/rejected counts, fallback marker, per-test source, and generation/validation timing. API run and experiment responses now expose `completed_with_fallback` when campaign execution completed using deterministic fallback. The UI shows fallback state, request budget, and bounded provider diagnostics.
+- Runs with no executable candidates are now persisted as failed campaigns and surfaced as `generation_failed` in experiment responses, rather than raising before the diagnostics can be committed.
+- Exact historical root cause remains unconfirmed: earlier run records had no `failed_generation` detail, so the rejected content cannot be recovered. The current schema/request contract is verified against live Groq and is not inherently rejected by the configured model.
+
+### Verification
+- Mocked Groq, prompt/validation, approach/fallback, semantic-context, retry, truncation, and status tests: 37 passed.
+- Ruff on changed backend files: passed.
+- Mypy on changed backend source areas: passed (18 source files).
+- Frontend TypeScript typecheck, ESLint on touched experiment files, and production build: passed.
+- Live Groq checks using the configured model: minimal strict JSON succeeded (77 completion tokens); actual IntelAPI candidate schema on a synthetic `GET /health` operation succeeded with 1 accepted candidate (449 completion tokens); the same operation with one extracted semantic fact succeeded with 2 accepted candidates (510 completion tokens). No credential was printed.
+- Live test limitation: Docker engine was unavailable, so the running browser/API stack and full database-backed experiment persistence path could not be verified in this turn. Three existing database-backed experiment API tests could not complete fixture setup because PostgreSQL at localhost:5432 was unavailable; the focused non-database unit set passed.

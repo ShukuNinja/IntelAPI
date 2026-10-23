@@ -12,27 +12,54 @@ logger = logging.getLogger(__name__)
 GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 
 
-def _provider_error_details(exc: Exception) -> tuple[str | None, str | None]:
-    """Extract a bounded, credential-scrubbed provider code and explanation."""
+DIAGNOSTIC_EXCERPT_LIMIT = 512
+
+
+def _redact_provider_text(value: str, *, limit: int = 300) -> str:
+    """Scrub common credential forms and bound provider-controlled text."""
+    value = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", value)
+    value = re.sub(r"(?i)(gsk_[a-z0-9_-]+|sk-[a-z0-9_-]+)", "[redacted]", value)
+    value = re.sub(
+        r"(?i)(api[_ -]?key|authorization|access[_ -]?token|password)(\s*[:=]\s*)[^,;\s}]+",
+        r"\1\2[redacted]",
+        value,
+    )
+    return re.sub(r"[\r\n\t]+", " ", value).strip()[:limit]
+
+
+def _provider_error_details(exc: Exception) -> tuple[str | None, str | None, str | None]:
+    """Extract bounded, credential-scrubbed code, message, and generation excerpt."""
     body = getattr(exc, "body", None)
     if not isinstance(body, Mapping):
-        return None, None
+        return None, None, None
     error = body.get("error", body)
     if not isinstance(error, Mapping):
-        return None, None
+        return None, None, None
     code = error.get("code")
     message = error.get("message")
+    failed_generation = error.get("failed_generation")
     if isinstance(code, str):
         code = re.sub(r"[^a-zA-Z0-9_-]", "", code)[:64]
     else:
         code = None
     if isinstance(message, str):
-        message = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", message)
-        message = re.sub(r"(?i)(gsk_[a-z0-9_-]+|sk-[a-z0-9_-]+)", "[redacted]", message)
-        message = re.sub(r"[\r\n\t]+", " ", message).strip()[:300]
+        message = _redact_provider_text(message)
     else:
         message = None
-    return code, message
+    if isinstance(failed_generation, (str, Mapping, list)):
+        if not isinstance(failed_generation, str):
+            try:
+                import json
+
+                failed_generation = json.dumps(
+                    failed_generation, ensure_ascii=False, separators=(",", ":")
+                )
+            except (TypeError, ValueError):
+                failed_generation = "[unavailable]"
+        failed_generation = _redact_provider_text(failed_generation, limit=DIAGNOSTIC_EXCERPT_LIMIT)
+    else:
+        failed_generation = None
+    return code, message, failed_generation
 
 
 class GroqProvider:
@@ -55,7 +82,9 @@ class GroqProvider:
                 base_url=GROQ_BASE_URL,
                 api_key=api_key,
                 timeout=30.0,
-                max_retries=1,
+                # Retries are handled at the generation layer so failures and
+                # attempt counts are visible in experiment diagnostics.
+                max_retries=0,
             )
         self._client = client
 
@@ -86,6 +115,7 @@ class GroqProvider:
                     {"role": "user", "content": request.user_prompt},
                 ],
                 max_tokens=request.max_output_tokens,
+                timeout=request.timeout_seconds,
                 **request_args,
             )
             if not response.choices:
@@ -101,12 +131,13 @@ class GroqProvider:
                 prompt_tokens=getattr(usage, "prompt_tokens", None),
                 completion_tokens=getattr(usage, "completion_tokens", None),
                 total_tokens=getattr(usage, "total_tokens", None),
+                finish_reason=getattr(response.choices[0], "finish_reason", None),
             )
         except LLMProviderError:
             raise
         except Exception as exc:
             status_code = getattr(exc, "status_code", None)
-            body_code, provider_message = _provider_error_details(exc)
+            body_code, provider_message, failed_generation = _provider_error_details(exc)
             provider_code = body_code or getattr(exc, "code", None)
             provider_code = (
                 re.sub(r"[^a-zA-Z0-9_-]", "", provider_code)[:64]
@@ -187,4 +218,15 @@ class GroqProvider:
                 code,
                 provider_message,
             )
-            raise LLMProviderError(message, code=code) from exc
+            retryable = status_code == 429 or (isinstance(status_code, int) and status_code >= 500)
+            if type(exc).__name__ in {"APITimeoutError", "TimeoutError", "APIConnectionError"}:
+                retryable = True
+            raise LLMProviderError(
+                message,
+                code=code,
+                status_code=status_code if isinstance(status_code, int) else None,
+                provider="groq",
+                model=self._model,
+                retryable=retryable,
+                failed_generation=failed_generation,
+            ) from exc

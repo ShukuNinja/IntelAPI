@@ -9,7 +9,7 @@ from app.integrations.llm import LLMProvider, LLMProviderError, LLMResponse, cre
 from app.modules.api_understanding.models import NormalizedOperation
 from app.modules.test_generation.deduplication import deduplicate_candidates
 from app.modules.test_generation.generator import generate_candidates
-from app.modules.test_generation.llm_assisted import generate_llm_candidates
+from app.modules.test_generation.llm_assisted import bounded_semantic_facts, generate_llm_candidates
 from app.modules.test_generation.models import TestCandidate
 
 
@@ -39,6 +39,13 @@ class ApproachGenerationResult:
     rejected_candidates: tuple[dict[str, Any], ...] = ()
     valid_candidate_count: int | None = None
     llm_request_attempted: bool = False
+    requested_candidate_count: int = 0
+    generation_errors: tuple[dict[str, Any], ...] = ()
+    attempt_count: int = 0
+    completion_received: bool = False
+    local_parse_succeeded: bool = False
+    local_validation_succeeded: bool = False
+    validation_duration_ms: int = 0
 
 
 POLICY_VERSIONS = {
@@ -47,6 +54,12 @@ POLICY_VERSIONS = {
     GenerationApproach.FEEDBACK_GUIDED: "feedback-seed-v1",
     GenerationApproach.EVIDENCE_BACKED: "evidence-priority-v1",
 }
+
+
+def _attempt_count(errors: Sequence[dict[str, Any]], response_count: int) -> int:
+    local_failures = {"local_validation_failed", "malformed_output", "output_truncated"}
+    provider_error_count = sum(item.get("category") not in local_failures for item in errors)
+    return response_count + provider_error_count
 
 
 def generate_for_approach(
@@ -58,6 +71,8 @@ def generate_for_approach(
     allow_llm: bool = True,
     llm_provider_name: str | None = None,
     llm_model_name: str | None = None,
+    candidate_count: int = 4,
+    max_attempts: int = 2,
 ) -> ApproachGenerationResult:
     """Generate a validated candidate pool using one explicit approach policy.
 
@@ -83,7 +98,11 @@ def generate_for_approach(
     if approach is GenerationApproach.SEMANTIC_ASSISTED:
         semantic_count = (
             sum(
-                len(semantic_facts_by_operation.get(operation.operation_key, ()))
+                len(
+                    bounded_semantic_facts(
+                        semantic_facts_by_operation.get(operation.operation_key, ())
+                    )
+                )
                 for operation in operations
             )
             if semantic_facts_by_operation is not None
@@ -100,6 +119,11 @@ def generate_for_approach(
             "disabled",
         )
     rejected_candidates: list[dict[str, Any]] = []
+    generation_errors: list[dict[str, Any]] = []
+    parse_results: list[bool] = []
+    validation_results: list[bool] = []
+    validation_duration_ms = 0
+    validation_durations: list[int] = []
     try:
         configured_provider = (
             provider
@@ -127,19 +151,50 @@ def generate_for_approach(
     try:
         proposals: list[TestCandidate] = []
         responses: list[LLMResponse] = []
+
+        def record_rejection(item: dict[str, Any]) -> None:
+            rejected_candidates.append(item)
+            if item.get("kind") == "candidate":
+                generation_errors.append(
+                    {
+                        "category": "local_validation_failed",
+                        "message": str(item.get("reason", "Candidate failed validation."))[:300],
+                        "http_status": None,
+                        "provider": getattr(configured_provider, "provider_name", None),
+                        "model": getattr(configured_provider, "model_name", None),
+                        "attempt": 1,
+                        "retryable": False,
+                        "failed_generation": None,
+                        "completion_received": True,
+                        "local_parse_succeeded": True,
+                        "local_validation_succeeded": False,
+                    }
+                )
+
+        def record_validation_duration(duration_ms: int) -> None:
+            validation_durations.append(duration_ms)
+
         for operation in operations:
             facts: Sequence[Mapping[str, Any]] = ()
             if approach is GenerationApproach.SEMANTIC_ASSISTED and semantic_facts_by_operation:
-                facts = semantic_facts_by_operation.get(operation.operation_key, ())
-            proposals.extend(
-                generate_llm_candidates(
-                    operation,
-                    configured_provider,
-                    semantic_facts=facts,
-                    on_response=responses.append,
-                    on_rejection=rejected_candidates.append,
+                facts = bounded_semantic_facts(
+                    semantic_facts_by_operation.get(operation.operation_key, ())
                 )
+            operation_candidates = generate_llm_candidates(
+                operation,
+                configured_provider,
+                semantic_facts=facts,
+                on_response=responses.append,
+                on_rejection=record_rejection,
+                candidate_count=candidate_count,
+                max_attempts=max_attempts,
+                on_error=generation_errors.append,
+                on_parse_result=parse_results.append,
+                on_validation_result=validation_results.append,
+                on_validation_duration=record_validation_duration,
             )
+            validation_duration_ms = sum(validation_durations)
+            proposals.extend(operation_candidates)
     except LLMProviderError as exc:
         return _fallback_result(
             approach,
@@ -150,6 +205,13 @@ def generate_for_approach(
             rejected_candidates,
             len(proposals),
             llm_request_attempted=True,
+            requested_candidate_count=candidate_count,
+            generation_errors=generation_errors,
+            attempt_count=_attempt_count(generation_errors, len(responses)),
+            completion_received=bool(responses),
+            local_parse_succeeded=bool(parse_results) and all(parse_results),
+            local_validation_succeeded=bool(validation_results) and all(validation_results),
+            validation_duration_ms=validation_duration_ms,
         )
     except Exception:
         return _fallback_result(
@@ -161,6 +223,13 @@ def generate_for_approach(
             rejected_candidates,
             len(proposals),
             llm_request_attempted=True,
+            requested_candidate_count=candidate_count,
+            generation_errors=generation_errors,
+            attempt_count=_attempt_count(generation_errors, len(responses)),
+            completion_received=bool(responses),
+            local_parse_succeeded=bool(parse_results) and all(parse_results),
+            local_validation_succeeded=bool(validation_results) and all(validation_results),
+            validation_duration_ms=validation_duration_ms,
         )
 
     unique_proposals = deduplicate_candidates(proposals)
@@ -174,6 +243,13 @@ def generate_for_approach(
             rejected_candidates,
             len(proposals),
             llm_request_attempted=True,
+            requested_candidate_count=candidate_count,
+            generation_errors=generation_errors,
+            attempt_count=_attempt_count(generation_errors, len(responses)),
+            completion_received=bool(responses),
+            local_parse_succeeded=bool(parse_results) and all(parse_results),
+            local_validation_succeeded=bool(validation_results) and all(validation_results),
+            validation_duration_ms=validation_duration_ms,
         )
 
     return ApproachGenerationResult(
@@ -204,6 +280,13 @@ def generate_for_approach(
         rejected_candidates=tuple(rejected_candidates),
         valid_candidate_count=len(unique_proposals),
         llm_request_attempted=True,
+        requested_candidate_count=candidate_count,
+        generation_errors=tuple(generation_errors),
+        attempt_count=_attempt_count(generation_errors, len(responses)),
+        completion_received=bool(responses),
+        local_parse_succeeded=bool(parse_results) and all(parse_results),
+        local_validation_succeeded=bool(validation_results) and all(validation_results),
+        validation_duration_ms=validation_duration_ms,
     )
 
 
@@ -216,6 +299,13 @@ def _fallback_result(
     rejected_candidates: Sequence[dict[str, Any]] = (),
     valid_candidate_count: int | None = None,
     llm_request_attempted: bool = False,
+    requested_candidate_count: int = 0,
+    generation_errors: Sequence[dict[str, Any]] = (),
+    attempt_count: int = 0,
+    completion_received: bool = False,
+    local_parse_succeeded: bool = False,
+    local_validation_succeeded: bool = False,
+    validation_duration_ms: int = 0,
 ) -> ApproachGenerationResult:
     return ApproachGenerationResult(
         approach=approach,
@@ -228,4 +318,11 @@ def _fallback_result(
         rejected_candidates=tuple(rejected_candidates),
         valid_candidate_count=valid_candidate_count,
         llm_request_attempted=llm_request_attempted,
+        requested_candidate_count=requested_candidate_count,
+        generation_errors=tuple(generation_errors),
+        attempt_count=attempt_count,
+        completion_received=completion_received,
+        local_parse_succeeded=local_parse_succeeded,
+        local_validation_succeeded=local_validation_succeeded,
+        validation_duration_ms=validation_duration_ms,
     )

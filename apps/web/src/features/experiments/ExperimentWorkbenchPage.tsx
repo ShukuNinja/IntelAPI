@@ -47,7 +47,8 @@ function metricReason(value: ExperimentMetric | undefined): string | null {
 
 function tone(state: string): 'success' | 'danger' | 'info' | 'neutral' {
   if (state === 'completed') return 'success'
-  if (state === 'failed' || state === 'partial') return 'danger'
+  if (state === 'completed_with_fallback') return 'info'
+  if (state === 'failed' || state === 'generation_failed' || state === 'partial') return 'danger'
   if (state === 'queued' || state === 'running') return 'info'
   return 'neutral'
 }
@@ -55,6 +56,7 @@ function tone(state: string): 'success' | 'danger' | 'info' | 'neutral' {
 function runSummary(run: Experiment['runs'][number], inspection?: RunInspection): { title: string; detail: string; tone: 'success' | 'danger' | 'info' | 'neutral' } {
   const mode = String(run.generation_metadata.mode ?? '')
   const llmStatus = String(run.generation_metadata.llm_status ?? '')
+  if (run.state === 'generation_failed') return { title: 'Generation failed', detail: 'No executable test candidates were available. Review the provider and rejection diagnostics below.', tone: 'danger' }
   if (mode === 'llm') {
     const failed = inspection?.executions.filter(item => item.status === 'failed').length ?? 0
     const completed = inspection?.executions.filter(item => item.status === 'completed').length ?? 0
@@ -88,6 +90,7 @@ export function ExperimentWorkbenchPage() {
   const [llmProviders, setLlmProviders] = useState<LlmProviderOptions | null>(null)
   const [llmProvider, setLlmProvider] = useState<'nvidia' | 'groq'>('nvidia')
   const [llmModel, setLlmModel] = useState('')
+  const [llmCandidateCount, setLlmCandidateCount] = useState(4)
   const [name, setName] = useState('')
   const [experiments, setExperiments] = useState<Experiment[]>([])
   const [selectedExperimentId, setSelectedExperimentId] = useState('')
@@ -197,6 +200,7 @@ export function ExperimentWorkbenchPage() {
         use_llm: useLlm,
         llm_provider: llmProvider,
         llm_model: llmModel.trim() || undefined,
+        llm_candidate_count: llmCandidateCount,
       })
       setName('')
       await refresh()
@@ -253,7 +257,7 @@ export function ExperimentWorkbenchPage() {
         <fieldset className="experiment-approaches"><legend>Approaches</legend>{approachOrder.map(approach => <label className="environment-card" key={approach}><input type="checkbox" checked={selectedApproaches.includes(approach)} onChange={event => setSelectedApproaches(current => event.target.checked ? [...current, approach] : current.filter(item => item !== approach))} /><span className="environment-card__body"><strong>{approachDetails[approach].title}</strong><small>{approachDetails[approach].description}</small></span></label>)}</fieldset>
         <fieldset className="experiment-approaches"><legend>OpenAPI operations ({selectedOperations.length} selected)</legend><div className="resource-list">{operations.map((operation: ApiOperation) => <label className="environment-card" key={operation.id}><input type="checkbox" checked={selectedOperations.includes(operation.id)} onChange={event => setSelectedOperations(current => event.target.checked ? [...current, operation.id] : current.filter(id => id !== operation.id))} /><span className="environment-card__body"><strong>{operation.method.toUpperCase()} {operation.path_template}</strong><small>{operation.summary || operation.operation_key}</small></span></label>)}</div></fieldset>
         <label className="environment-card"><input type="checkbox" checked={useLlm} onChange={event => setUseLlm(event.target.checked)} /><span className="environment-card__body"><strong>Allow configured LLM generation</strong><small>May send selected OpenAPI context and extracted facts to the server configured provider. Disabled runs use deterministic fallback candidates.</small></span></label>
-        {useLlm && <><label htmlFor="experiment-llm-provider">LLM provider</label><select id="experiment-llm-provider" value={llmProvider} onChange={event => { const provider = event.target.value as 'nvidia' | 'groq'; setLlmProvider(provider); setLlmModel(llmProviders?.providers.find(item => item.id === provider)?.model ?? '') }}>{llmProviders?.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id === 'nvidia' ? 'NVIDIA' : 'Groq'}{provider.configured ? ' · configured' : ' · no server key (deterministic fallback)'}</option>)}</select><label htmlFor="experiment-llm-model">Model</label><input id="experiment-llm-model" value={llmModel} maxLength={160} onChange={event => setLlmModel(event.target.value)} placeholder="Configured model" /></>}
+        {useLlm && <><label htmlFor="experiment-llm-provider">LLM provider</label><select id="experiment-llm-provider" value={llmProvider} onChange={event => { const provider = event.target.value as 'nvidia' | 'groq'; setLlmProvider(provider); setLlmModel(llmProviders?.providers.find(item => item.id === provider)?.model ?? '') }}>{llmProviders?.providers.map(provider => <option key={provider.id} value={provider.id}>{provider.id === 'nvidia' ? 'NVIDIA' : 'Groq'}{provider.configured ? ' · configured' : ' · no server key (deterministic fallback)'}</option>)}</select><label htmlFor="experiment-llm-model">Model</label><input id="experiment-llm-model" value={llmModel} maxLength={160} onChange={event => setLlmModel(event.target.value)} placeholder="Configured model" /><label htmlFor="experiment-llm-candidate-count">Maximum LLM candidates per operation</label><select id="experiment-llm-candidate-count" value={llmCandidateCount} onChange={event => setLlmCandidateCount(Number(event.target.value))}>{[3, 4, 5].map(count => <option key={count} value={count}>{count} candidates</option>)}</select></>}
         {!useLlm && selectedApproaches.some(approach => approach === 'llm_baseline' || approach === 'semantic_assisted') && <div className="notice notice--warning"><div><strong>LLM approaches will fall back to deterministic generation</strong><p>This run can compare execution policies, but it will not measure the effect of LLM or semantic prompt context.</p></div></div>}
         <div className="form-actions"><Button variant="primary" disabled={busy || !canCreate} onClick={() => void createExperiment()}><Rocket size={15} /> {busy ? 'Queueing approaches…' : 'Run selected approaches'}</Button></div>
       </div>}
@@ -271,13 +275,18 @@ export function ExperimentWorkbenchPage() {
         const validCount = Number(run.generation_metadata.valid_candidate_count ?? run.candidate_count)
         const provider = String(run.generation_metadata.llm_provider ?? run.generation_metadata.requested_llm_provider ?? '—')
         const model = String(run.generation_metadata.llm_model ?? run.generation_metadata.requested_llm_model ?? '')
+        const generationErrors = Array.isArray(run.generation_metadata.generation_errors)
+          ? run.generation_metadata.generation_errors as Array<{ category?: string; message?: string; http_status?: number | null; attempt?: number; failed_generation?: string | null }>
+          : []
         return <article className="experiment-run-card" key={run.id}>
           <div><strong>{approachDetails[run.approach].title}</strong><Badge tone={tone(run.state)}>{run.state}</Badge>{(run.state === 'queued' || run.state === 'running') && <Button size="sm" disabled={busy} onClick={() => void cancelRun(run)}>Cancel run</Button>}</div>
           <p>{run.candidate_count} saved candidates · {run.execution_count} executed</p>
           <div className={`experiment-verdict experiment-verdict--${summary.tone}`}><strong>{summary.title}</strong><p>{summary.detail}</p></div>
           <small>{String(run.generation_metadata.mode ?? 'generation pending')} · {String(run.generation_metadata.policy_version ?? '')}</small>
           <small>{provider}{model ? ` · ${model}` : ''} · {validCount} valid · {rejected.filter(item => item.kind === 'candidate').length} rejected</small>
+          {Boolean(run.generation_metadata.llm_request_attempted) && <small>{String(run.generation_metadata.requested_candidate_count_per_operation ?? 4)} requested per operation · {Number(run.generation_metadata.retry_count ?? 0)} retries · {Number(run.generation_metadata.attempt_count ?? 0)} attempts · {Number(run.generation_metadata.request_timeout_seconds ?? 30)}s timeout · {String(run.generation_metadata.output_token_budget_per_operation ?? '—')} output tokens</small>}
           {typeof run.generation_metadata.warning === 'string' && <small className="experiment-warning">{run.generation_metadata.warning}</small>}
+          {generationErrors.length > 0 && <details className="experiment-rejected"><summary>Provider diagnostics ({generationErrors.length})</summary>{generationErrors.map((item, index) => <div key={`${run.id}-provider-error-${index}`}><p><strong>{item.category ?? 'provider_error'}</strong> · HTTP {item.http_status ?? '—'} · attempt {item.attempt ?? index + 1}</p><p>{item.message ?? 'Provider request failed.'}</p>{item.failed_generation && <pre className="code-preview">{item.failed_generation}</pre>}</div>)}</details>}
           {rejected.length > 0 && <details className="experiment-rejected"><summary>Rejected generation output ({rejected.length})</summary>{rejected.map((item, index) => <div key={`${run.id}-rejected-${index}`}><p>{item.kind === 'candidate' && item.index !== undefined ? `Proposal ${item.index + 1}: ` : ''}{item.reason ?? 'Rejected by candidate validation.'}</p>{item.proposal && <pre className="code-preview">{item.proposal}</pre>}</div>)}</details>}
         </article>
       })}</div>

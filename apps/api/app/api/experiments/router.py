@@ -18,6 +18,7 @@ from app.api.experiments.schemas import (
     ExperimentRead,
     ExperimentRunRead,
 )
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.api_specification import APIOperation, APISpecification, KnowledgeFact
 from app.models.campaign import Campaign, CampaignJob, TestCase
@@ -46,6 +47,10 @@ def _not_found() -> HTTPException:
 def _experiment_state(states: list[str]) -> str:
     if not states:
         return "failed"
+    if all(state == "generation_failed" for state in states):
+        return "generation_failed"
+    if all(state in {"completed", "completed_with_fallback"} for state in states):
+        return "completed_with_fallback" if "completed_with_fallback" in states else "completed"
     if all(state == "completed" for state in states):
         return "completed"
     if all(state == "cancelled" for state in states):
@@ -69,8 +74,16 @@ def _experiment_read(db: Session, row: Experiment) -> ExperimentRead:
     runs: list[ExperimentRunRead] = []
     states: list[str] = []
     for run, campaign in results:
-        states.append(campaign.state)
         generation_metadata = dict(run.generation_metadata)
+        run_state = campaign.state
+        if campaign.state == "completed" and generation_metadata.get("deterministic_fallback"):
+            run_state = "completed_with_fallback"
+        elif (
+            campaign.state == "failed"
+            and generation_metadata.get("generation_status") == "generation_failed"
+        ):
+            run_state = "generation_failed"
+        states.append(run_state)
         llm_status = generation_metadata.get("llm_status")
         warning = generation_metadata.get("warning")
         legacy_attempted = llm_status == "succeeded" or (
@@ -112,7 +125,7 @@ def _experiment_read(db: Session, row: Experiment) -> ExperimentRead:
                 id=run.id,
                 campaign_id=campaign.id,
                 approach=GenerationApproach(run.approach),
-                state=campaign.state,
+                state=run_state,
                 configuration=run.configuration,
                 generation_metadata=generation_metadata,
                 candidate_count=candidates,
@@ -354,6 +367,7 @@ def create_experiment(
         "use_llm": payload.use_llm,
         "llm_provider": payload.llm_provider,
         "llm_model": payload.llm_model,
+        "llm_candidate_count": payload.llm_candidate_count,
         "budgets": {
             "max_executions_per_approach": payload.max_executions,
             "max_iterations_per_approach": payload.max_iterations,
@@ -414,6 +428,8 @@ def create_experiment(
             allow_llm=payload.use_llm,
             llm_provider_name=payload.llm_provider,
             llm_model_name=payload.llm_model,
+            candidate_count=payload.llm_candidate_count,
+            max_attempts=get_settings().llm_generation_max_attempts,
         )
         generation_duration_ms = round((perf_counter() - generation_started) * 1000)
         candidates_by_operation: dict[str, list[Any]] = {}
@@ -443,6 +459,13 @@ def create_experiment(
                         description=candidate.rationale[:2000],
                         request_override={
                             "source": "openapi_candidate",
+                            "generation_source": (
+                                "deterministic_fallback"
+                                if generation.generation_mode == "deterministic_fallback"
+                                else "deterministic"
+                                if generation.generation_mode == "deterministic_pool"
+                                else "llm"
+                            ),
                             "candidate_id": candidate.candidate_id,
                             "operation_key": normalized.operation_key,
                             "method": candidate.method,
@@ -464,17 +487,20 @@ def create_experiment(
                         ),
                     )
                 )
-        if not cases:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Approach {approach.value} produced no executable test cases.",
-            )
+        generation_failed = not cases
         case_limit = min(payload.max_iterations, payload.max_executions, len(cases))
         campaign = Campaign(
             project_id=project_id,
             created_by_user_id=current_user.id,
             name=f"{payload.name} · {approach.value}"[:160],
-            state="queued",
+            state="failed" if generation_failed else "queued",
+            failure_code="generation_failed" if generation_failed else None,
+            failure_summary=(
+                "The selected approach produced no executable test cases."
+                if generation_failed
+                else None
+            ),
+            completed_at=func.now() if generation_failed else None,
             configuration={
                 "input_type": "openapi_operations",
                 "operation_ids": operation_ids,
@@ -492,11 +518,12 @@ def create_experiment(
         for case in cases[:case_limit]:
             case.campaign_id = campaign.id
             db.add(case)
-        db.add(CampaignJob(campaign_id=campaign.id, state="queued"))
+        if not generation_failed:
+            db.add(CampaignJob(campaign_id=campaign.id, state="queued"))
         append_event(
             db,
             campaign.id,
-            "campaign_queued",
+            "generation_failed" if generation_failed else "campaign_queued",
             {
                 "experiment_id": str(experiment.id),
                 "approach": approach.value,
@@ -525,6 +552,13 @@ def create_experiment(
                         else None
                     ),
                     "mode": generation.generation_mode,
+                    "generation_status": (
+                        "generation_failed"
+                        if generation_failed
+                        else "completed_with_fallback"
+                        if generation.generation_mode == "deterministic_fallback"
+                        else "completed"
+                    ),
                     "llm_status": generation.llm_status,
                     "warning": generation.warning,
                     "semantic_fact_count": generation.semantic_fact_count,
@@ -537,6 +571,7 @@ def create_experiment(
                     "generated_candidate_count": len(generation.candidates),
                     "persisted_candidate_count": case_limit,
                     "generation_duration_ms": generation_duration_ms,
+                    "validation_duration_ms": generation.validation_duration_ms,
                     "valid_candidate_count": (
                         generation.valid_candidate_count
                         if generation.valid_candidate_count is not None
@@ -546,6 +581,24 @@ def create_experiment(
                         item.get("kind") == "candidate" for item in generation.rejected_candidates
                     ),
                     "rejected_candidates": list(generation.rejected_candidates),
+                    "requested_candidate_count_per_operation": generation.requested_candidate_count,
+                    "accepted_candidate_count": len(generation.candidates),
+                    "generation_errors": list(generation.generation_errors),
+                    "retry_count": sum(
+                        bool(item.get("retry_scheduled")) for item in generation.generation_errors
+                    ),
+                    "attempt_count": generation.attempt_count,
+                    "deterministic_fallback": generation.generation_mode
+                    == "deterministic_fallback",
+                    "completion_received": generation.completion_received,
+                    "local_parse_succeeded": generation.local_parse_succeeded,
+                    "local_validation_succeeded": generation.local_validation_succeeded,
+                    "request_timeout_seconds": 30,
+                    "output_token_budget_per_operation": min(
+                        1200, 260 + payload.llm_candidate_count * 180
+                    )
+                    if generation.llm_request_attempted
+                    else None,
                     "requested_llm_provider": payload.llm_provider,
                     "requested_llm_model": payload.llm_model,
                 },

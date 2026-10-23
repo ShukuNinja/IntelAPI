@@ -11,6 +11,7 @@ class LLMRequest:
     user_prompt: str
     max_output_tokens: int = 2048
     json_schema: dict[str, object] | None = None
+    timeout_seconds: float = 30.0
 
     def __post_init__(self) -> None:
         if not self.system_prompt.strip():
@@ -21,6 +22,8 @@ class LLMRequest:
 
         if self.max_output_tokens <= 0:
             raise ValueError("max_output_tokens must be positive.")
+        if self.timeout_seconds <= 0 or self.timeout_seconds > 120:
+            raise ValueError("timeout_seconds must be greater than 0 and at most 120.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,3 +36,4 @@ class LLMResponse:
     prompt_tokens: int | None = None
     completion_tokens: int | None = None
     total_tokens: int | None = None
+    finish_reason: str | None = None

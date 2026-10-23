@@ -89,6 +89,7 @@ export const experimentService = {
     use_llm: boolean
     llm_provider?: 'nvidia' | 'groq'
     llm_model?: string
+    llm_candidate_count?: number
   }) {
     return apiRequest<Experiment>(`/v1/projects/${projectId}/experiments`, {
       method: 'POST',

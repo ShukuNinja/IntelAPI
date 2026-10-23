@@ -29,6 +29,7 @@ class ExperimentCreate(BaseModel):
     use_llm: bool = False
     llm_provider: Literal["nvidia", "groq"] | None = None
     llm_model: str | None = Field(default=None, min_length=1, max_length=160)
+    llm_candidate_count: int = Field(default=4, ge=1, le=10)
     max_executions: int = Field(default=100, ge=1, le=1000)
     max_iterations: int = Field(default=100, ge=1, le=1000)
     max_duration_seconds: int = Field(default=1800, ge=1, le=86400)
