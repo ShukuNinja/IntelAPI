@@ -1,4 +1,10 @@
 from app.models.assertion_result import AssertionResultRecord
+from app.models.campaign import (
+    CampaignEventRecord,
+    CampaignJobRecord,
+    CampaignRecord,
+    TestCaseRecord,
+)
 from app.models.execution import ExecutionRecord
 from app.models.execution_report import ExecutionReportRecord
 from app.models.finding_triage import FindingTriageRecord
@@ -16,9 +22,13 @@ __all__ = [
     "FindingTriageRecord",
     "HealthCheckRecord",
     "AssertionResultRecord",
+    "CampaignEventRecord",
+    "CampaignJobRecord",
+    "CampaignRecord",
     "GenerationReportRecord",
     "Environment",
     "Project",
     "SavedRequest",
     "User",
+    "TestCaseRecord",
 ]

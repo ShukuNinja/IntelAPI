@@ -1,10 +1,10 @@
 # IntelAPI — Local Development Runbook
 
 **Audience:** Developer A and Developer B
-**Baseline date:** 2026-10-16
+**Baseline date:** 2026-10-24
 **Primary OS assumed:** Windows 10/11 with PowerShell and Docker Desktop. Linux/macOS users should translate shell syntax and report any platform-specific difference.
 
-This runbook describes the last verified scaffold. It does not imply the complete product is implemented. If the repository scripts differ from these instructions, inspect the checked-in manifests and update this runbook in a reviewed PR.
+This runbook describes the runnable local demo. Google sign-in and production multi-user authorization are not implemented; run with the development defaults only on a trusted local machine.
 
 ## 1. Prerequisites
 
@@ -22,12 +22,12 @@ Do not install PostgreSQL separately if the Compose PostgreSQL service is the in
 ```powershell
 git clone https://github.com/ShukuNinja/IntelAPI.git
 cd IntelAPI
-git switch main
-git pull --ff-only
+git switch final-version
+git pull --ff-only origin final-version
 git status --short
 ```
 
-The canonical path used by Developer A at the last verification was `D:\Pinnacle\api-intelligence-platform-stage1`; your clone path can differ.
+The canonical development path used for this delivery is `D:\Pinnacle`; your clone path can differ.
 
 Before running commands, inspect the current scripts and service names:
 
@@ -42,7 +42,7 @@ If the Compose file is named `docker-compose.yml` or another supported filename,
 ## 3. Environment configuration
 
 1. Locate the checked-in `.env.example` files and copy the appropriate example to the local ignored `.env` file expected by Compose.
-2. Fill only required local values. Use a local-only database password and random local encryption/session keys if those settings are introduced.
+2. Fill only required local values. Use a local-only database password. To store environment secrets, set `ENVIRONMENT_ENCRYPTION_KEY` to a stable Fernet key generated with `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`. Keep the same key across restarts and backups; losing it makes stored secrets unreadable.
 3. Do not copy your teammate's `.env`, paste secrets into chat/PRs, or commit `.env`.
 4. Confirm `.gitignore` excludes `.env`, local overrides, test artifacts, and database volumes.
 5. Google sign-in requires a configured Google client ID only after auth implementation is integrated. Ordinary deterministic API workspace and candidate generation must not require an LLM key.
@@ -63,6 +63,7 @@ From the repository root:
 docker compose up --build -d
 docker compose ps
 docker compose logs --tail 100 api
+docker compose logs --tail 100 worker
 docker compose logs --tail 100 web
 ```
 
@@ -75,6 +76,24 @@ Expected baseline:
 
 Open the web app in a browser at `http://localhost:5173`.
 
+Apply schema migrations before using the workspace:
+
+```powershell
+docker compose exec api alembic upgrade head
+```
+
+The Compose `worker` service processes queued campaigns. It shares the API image and database; it must be running for campaign jobs to advance from `queued`.
+
+## 4.1 Demo path
+
+1. Open **API Explorer**, create a project, and import a small OpenAPI JSON/YAML file or paste a document.
+2. Generate a candidate report and confirm the endpoints and candidate ideas are visible.
+3. Open **Campaigns**, choose the project and report, enter a reachable target base URL, and set a small execution budget.
+4. For operations with path parameters or JSON request bodies, add baseline values keyed by the operation IDs shown in the form. Example: `{ "operation-id": { "path_parameters": { "id": "123" }, "body": { "name": "demo" } } }`.
+5. Queue the campaign. The worker runs candidate requests through the same destination, redirect, timeout, and response-size protections as the request workspace. Review its progress, test results, and event timeline on the Campaigns page.
+
+Use a local mock API target only when `ALLOW_LOCAL_TARGETS=true` in the API environment. State-changing methods are not sent unless the campaign creation checkbox explicitly confirms them.
+
 ## 5. Verify API and database
 
 ```powershell
@@ -85,12 +104,7 @@ docker compose exec api alembic current
 docker compose exec api pytest -q
 ```
 
-Last verified scaffold behavior:
-- `/health/live` returned `{"status":"alive"}`.
-- `/health/ready` returned a ready response.
-- `/api/v1/meta` returned `{"status":"scaffold"}`.
-- Alembic showed `0001_initial (head)` and the migration was effectively empty.
-- Backend test suite had 2 passing tests.
+Current limitations: live PostgreSQL/worker runtime, Google authentication, campaign finding classification, and full end-to-end browser flows still need verification/implementation. The environment key must remain stable across restarts or stored secrets cannot be decrypted.
 
 These are baseline smoke checks, not acceptance tests for the full product.
 

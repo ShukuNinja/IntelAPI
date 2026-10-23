@@ -8,7 +8,7 @@ import { apiRequest } from '../../lib/apiClient'
 
 type Project = { id: string; name: string; description: string | null }
 type SavedRequest = { id: string; name: string; collection_name: string | null; method: string; url: string; headers: Record<string, string>; body: string | null }
-type Environment = { id: string; name: string; base_url: string | null; variables: Record<string, string> }
+type Environment = { id: string; name: string; base_url: string | null; variables: Record<string, string>; secrets: Record<string, { has_value: boolean }> }
 type Execution = {
   id: string; status_code: number; elapsed_ms: number; response_bytes: number
   headers: Record<string, string>; body: unknown; origin: string; outcome: string
@@ -36,7 +36,8 @@ export function WorkspacePage() {
   const [collectionName, setCollectionName] = useState('')
   const [newEnvironmentName, setNewEnvironmentName] = useState('')
   const [newEnvironmentBaseUrl, setNewEnvironmentBaseUrl] = useState('')
-  const [newEnvironmentVariables, setNewEnvironmentVariables] = useState('{\n  "token": ""\n}')
+  const [newEnvironmentVariables, setNewEnvironmentVariables] = useState('{\n  "region": "us-east-1"\n}')
+  const [newEnvironmentSecrets, setNewEnvironmentSecrets] = useState('{}')
   const [showEnvironmentForm, setShowEnvironmentForm] = useState(false)
   const [history, setHistory] = useState<HistoryEntry[]>([])
   const [response, setResponse] = useState<Execution | null>(null)
@@ -103,16 +104,22 @@ export function WorkspacePage() {
   async function createEnvironment() {
     if (!projectId || !newEnvironmentName.trim()) { setError('Select a project and enter an environment name.'); return }
     let variables: Record<string, string>
+    let secrets: Record<string, string>
     try {
       variables = JSON.parse(newEnvironmentVariables) as Record<string, string>
       if (!variables || Array.isArray(variables) || typeof variables !== 'object' || Object.values(variables).some(value => typeof value !== 'string')) throw new Error('Variables must be a JSON object with string values.')
+      secrets = JSON.parse(newEnvironmentSecrets) as Record<string, string>
+      if (!secrets || Array.isArray(secrets) || typeof secrets !== 'object' || Object.values(secrets).some(value => typeof value !== 'string')) throw new Error('Secret values must be a JSON object with string values.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Environment variables must be valid JSON.'); return }
     try {
       const environment = await apiRequest<Environment>(`/v1/projects/${projectId}/environments`, {
-        method: 'POST', body: JSON.stringify({ name: newEnvironmentName.trim(), base_url: newEnvironmentBaseUrl.trim() || null, variables }),
+        method: 'POST', body: JSON.stringify({ name: newEnvironmentName.trim(), base_url: newEnvironmentBaseUrl.trim() || null, variables, secrets }),
       })
       setEnvironments(current => [...current.filter(item => item.id !== environment.id), environment].sort((a, b) => a.name.localeCompare(b.name)))
       setSelectedEnvironmentId(environment.id)
+      setNewEnvironmentName('')
+      setNewEnvironmentBaseUrl('')
+      setNewEnvironmentSecrets('{}')
       setShowEnvironmentForm(false)
       setError('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to save the environment.') }
@@ -126,27 +133,12 @@ export function WorkspacePage() {
       headers = JSON.parse(headersText) as Record<string, string>
       if (!headers || Array.isArray(headers) || typeof headers !== 'object' || Object.values(headers).some(value => typeof value !== 'string')) throw new Error('Headers must be a JSON object with string values.')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Headers must be valid JSON.'); return }
-    const environment = environments.find(item => item.id === selectedEnvironmentId)
-    const variables: Record<string, string> = { ...(environment?.variables ?? {}), ...(environment?.base_url ? { baseUrl: environment.base_url } : {}) }
-    const interpolate = (value: string) => value.replace(/\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}/g, (_match, key: string) => {
-      if (!(key in variables)) throw new Error(`Environment variable '${key}' is not defined.`)
-      return variables[key]
-    })
-    let resolvedUrl: string
-    let resolvedBody: string
-    let resolvedHeaders: Record<string, string>
-    try {
-      resolvedUrl = interpolate(url)
-      resolvedHeaders = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key, interpolate(value)]))
-      resolvedBody = body ? interpolate(body) : ''
-      if (/\{\{[^}]+\}\}/.test(resolvedUrl + JSON.stringify(resolvedHeaders) + resolvedBody)) throw new Error('A template variable could not be resolved.')
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to resolve environment variables.'); return }
-    if (unsafe && !window.confirm(`Send this ${method} request to ${resolvedUrl}? It may change remote data.`)) return
+    if (unsafe && !window.confirm(`Send this ${method} request to ${url}? It may change remote data.`)) return
     setBusy(true)
     try {
       const result = await apiRequest<Execution>(`/v1/projects/${projectId}/executions`, {
         method: 'POST',
-        body: JSON.stringify({ method, url: resolvedUrl, headers: resolvedHeaders, body: resolvedBody || null, confirm_unsafe: unsafe }),
+        body: JSON.stringify({ method, url, headers, body: body || null, confirm_unsafe: unsafe, environment_id: selectedEnvironmentId || null }),
       })
       setResponse(result)
       await refreshHistory(projectId)
@@ -160,9 +152,9 @@ export function WorkspacePage() {
     <Panel title="Request" subtitle="Requests are sent by the backend with timeout, response-size, redirect, and target-network controls.">
       <div className="grid gap-4 p-4">
         <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Select a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
-        <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 md:grid-cols-[1fr_1fr_auto]"><label className="text-xs text-slate-300">Saved request<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedRequestId} onChange={event => applySavedRequest(event.target.value)}><option value="">New request…</option>{savedRequests.map(item => <option key={item.id} value={item.id}>{item.collection_name ? `${item.collection_name} / ` : ''}${item.name}</option>)}</select></label><label className="text-xs text-slate-300">Environment<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedEnvironmentId} onChange={event => setSelectedEnvironmentId(event.target.value)}><option value="">No environment</option>{environments.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label><div className="flex items-end"><Button size="sm" onClick={() => { setShowEnvironmentForm(value => !value); setError('') }}>{showEnvironmentForm ? 'Close' : 'New environment'}</Button></div>
+        <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 md:grid-cols-[1fr_1fr_auto]"><label className="text-xs text-slate-300">Saved request<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedRequestId} onChange={event => applySavedRequest(event.target.value)}><option value="">New request…</option>{savedRequests.map(item => <option key={item.id} value={item.id}>{item.collection_name ? `${item.collection_name} / ` : ''}${item.name}</option>)}</select></label><label className="text-xs text-slate-300">Environment<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedEnvironmentId} onChange={event => setSelectedEnvironmentId(event.target.value)}><option value="">No environment</option>{environments.map(item => <option key={item.id} value={item.id}>{item.name}{Object.keys(item.secrets ?? {}).length ? ` · ${Object.keys(item.secrets).length} secret(s)` : ''}</option>)}</select></label><div className="flex items-end"><Button size="sm" onClick={() => { setShowEnvironmentForm(value => !value); setError('') }}>{showEnvironmentForm ? 'Close' : 'New environment'}</Button></div>
           <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_1fr_auto]"><input aria-label="Saved request name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={requestName} onChange={event => setRequestName(event.target.value)} placeholder="Request name"/><input aria-label="Collection name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={collectionName} onChange={event => setCollectionName(event.target.value)} placeholder="Collection (optional)"/><Button size="sm" onClick={() => void saveRequest()}>{selectedRequestId ? 'Update saved request' : 'Save request'}</Button></div>
-          {showEnvironmentForm && <div className="grid gap-2 border-t border-slate-800 pt-3 md:col-span-3 md:grid-cols-2"><input aria-label="Environment name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentName} onChange={event => setNewEnvironmentName(event.target.value)} placeholder="Environment name"/><input aria-label="Environment base URL" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentBaseUrl} onChange={event => setNewEnvironmentBaseUrl(event.target.value)} placeholder="Base URL, e.g. http://localhost:8000"/><textarea aria-label="Environment variables" className="min-h-20 rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs md:col-span-2" value={newEnvironmentVariables} onChange={event => setNewEnvironmentVariables(event.target.value)} /><div className="flex items-center justify-between text-[11px] text-slate-500 md:col-span-2"><span>Use {'{{baseUrl}}'} and {'{{variableName}}'} in URLs, headers, or body. Values are saved in this project.</span><Button size="sm" variant="primary" onClick={() => void createEnvironment()}>Save environment</Button></div></div>}
+          {showEnvironmentForm && <div className="grid gap-2 border-t border-slate-800 pt-3 md:col-span-3 md:grid-cols-2"><input aria-label="Environment name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentName} onChange={event => setNewEnvironmentName(event.target.value)} placeholder="Environment name"/><input aria-label="Environment base URL" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newEnvironmentBaseUrl} onChange={event => setNewEnvironmentBaseUrl(event.target.value)} placeholder="Base URL, e.g. http://localhost:8000"/><textarea aria-label="Environment variables" className="min-h-20 rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs md:col-span-2" value={newEnvironmentVariables} onChange={event => setNewEnvironmentVariables(event.target.value)} /><textarea aria-label="Write-only environment secrets" className="min-h-20 rounded border border-slate-700 bg-slate-900 p-2 font-mono text-xs md:col-span-2" value={newEnvironmentSecrets} onChange={event => setNewEnvironmentSecrets(event.target.value)} placeholder={'{"token":"paste-secret-here"}'} /><div className="flex items-center justify-between text-[11px] text-slate-500 md:col-span-2"><span>Use {'{{baseUrl}}'} and {'{{variableName}}'} in requests. Secrets are encrypted server-side and never returned.</span><Button size="sm" variant="primary" onClick={() => void createEnvironment()}>Save environment</Button></div></div>}
         </div>
         <div className="grid gap-2 sm:grid-cols-[130px_1fr]"><select className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" aria-label="HTTP method" value={method} onChange={event => setMethod(event.target.value)}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(value => <option key={value}>{value}</option>)}</select><input className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm" aria-label="Request URL" value={url} onChange={event => setUrl(event.target.value)} placeholder="http://localhost:8000/api/resource" spellCheck={false} /></div>
         {unsafe && <p className="m-0 text-xs text-amber-300">Sending {method} can change target data. The app asks for confirmation before sending.</p>}

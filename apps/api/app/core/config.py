@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     database_url: SecretStr = SecretStr(
         "postgresql+psycopg://api_app:replace-this-local-password@localhost:5432/api_intelligence"
     )
+    environment_encryption_key: SecretStr | None = None
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"]
     )

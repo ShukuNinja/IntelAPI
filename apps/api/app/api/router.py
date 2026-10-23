@@ -6,6 +6,7 @@ from app.modules.api_understanding.router import (
 from app.modules.api_understanding.router import (
     router as specifications_router,
 )
+from app.modules.campaigns.router import router as campaigns_router
 from app.modules.client.router import router as client_resources_router
 from app.modules.execution.router import router as execution_router
 from app.modules.findings.router import router as findings_router
@@ -22,6 +23,7 @@ api_router.include_router(discovery_router)
 api_router.include_router(projects_router)
 api_router.include_router(execution_router)
 api_router.include_router(client_resources_router)
+api_router.include_router(campaigns_router)
 api_router.include_router(readiness_router)
 api_router.include_router(findings_router)
 api_router.include_router(health_checks_router)

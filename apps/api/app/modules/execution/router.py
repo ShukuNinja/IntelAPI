@@ -1,3 +1,4 @@
+import re
 from datetime import UTC, datetime
 from typing import Annotated, Any, Literal
 from uuid import UUID
@@ -8,8 +9,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.secret_storage import (
+    SecretStorageError,
+    decrypt_environment_values,
+    encrypt_environment_values,
+)
 from app.db.session import get_db
-from app.models import Project, User
+from app.models import Environment, Project, User
 from app.models.execution import ExecutionRecord
 from app.modules.execution.service import ExecutionError, execute_request
 from app.modules.projects.router import LOCAL_USER_SUB
@@ -23,6 +29,7 @@ class ExecuteRequest(BaseModel):
     headers: dict[str, str] = Field(default_factory=dict, max_length=100)
     body: str | None = Field(default=None, max_length=1_000_000)
     confirm_unsafe: bool = False
+    environment_id: UUID | None = None
 
 
 def _owned_project(db: Session, project_id: UUID) -> Project:
@@ -58,14 +65,66 @@ async def create_execution(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     _owned_project(db, project_id)
+    resolved_url = payload.url
+    resolved_headers = payload.headers
+    resolved_body = payload.body
+    if payload.environment_id is not None:
+        environment = db.scalar(
+            select(Environment).where(
+                Environment.id == payload.environment_id,
+                Environment.project_id == project_id,
+            )
+        )
+        if environment is None:
+            raise HTTPException(status_code=404, detail="Environment not found in this project.")
+        if not environment.secrets_migrated:
+            try:
+                migrated = encrypt_environment_values(environment.variables)
+            except SecretStorageError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            environment.secret_variables = {**environment.secret_variables, **migrated}
+            environment.variables = {}
+            environment.secrets_migrated = True
+            db.commit()
+        try:
+            variables = {
+                **environment.variables,
+                **decrypt_environment_values(environment.secret_variables),
+            }
+        except SecretStorageError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if environment.base_url:
+            variables["baseUrl"] = environment.base_url
+
+        def interpolate(value: str) -> str:
+            def replace(match: re.Match[str]) -> str:
+                key = match.group(1)
+                if key not in variables:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Environment variable '{key}' is not defined.",
+                    )
+                return variables[key]
+
+            return re.sub(r"\{\{([A-Za-z_][A-Za-z0-9_]*)\}\}", replace, value)
+
+        resolved_url = interpolate(resolved_url)
+        resolved_headers = {key: interpolate(value) for key, value in resolved_headers.items()}
+        resolved_body = interpolate(resolved_body) if resolved_body is not None else None
+        resolved_request = resolved_url + str(resolved_headers) + (resolved_body or "")
+        if re.search(r"\{\{[^{}]+\}\}", resolved_request):
+            raise HTTPException(
+                status_code=422,
+                detail="An environment template variable could not be resolved.",
+            )
     started_at = datetime.now(UTC)
     safe_snapshot: dict[str, str] = {"method": payload.method, "origin": "blocked"}
     try:
         result = await execute_request(
             method=payload.method,
-            url=payload.url,
-            headers=payload.headers,
-            body=payload.body,
+            url=resolved_url,
+            headers=resolved_headers,
+            body=resolved_body,
             confirm_unsafe=payload.confirm_unsafe,
         )
         safe_snapshot["origin"] = result["origin"]

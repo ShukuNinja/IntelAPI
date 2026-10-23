@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
+from app.core.secret_storage import SecretStorageError, encrypt_environment_values
 from app.db.session import get_db
 from app.models import Environment, Project, SavedRequest, User
 from app.modules.projects.router import LOCAL_USER_SUB
@@ -68,6 +69,8 @@ class EnvironmentInput(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     base_url: str | None = Field(default=None, max_length=2048)
     variables: dict[str, str] = Field(default_factory=dict, max_length=100)
+    secrets: dict[str, str] = Field(default_factory=dict, max_length=100)
+    remove_secrets: list[str] = Field(default_factory=list, max_length=100)
 
     @field_validator("name")
     @classmethod
@@ -86,6 +89,22 @@ class EnvironmentInput(BaseModel):
             raise ValueError("Environment values cannot exceed 4096 characters.")
         return variables
 
+    @field_validator("secrets")
+    @classmethod
+    def validate_secrets(cls, secrets: dict[str, str]) -> dict[str, str]:
+        if any(not _VARIABLE_NAME.fullmatch(key) for key in secrets):
+            raise ValueError("Secret names must use letters, digits, and underscores.")
+        if any(len(value) > 4096 for value in secrets.values()):
+            raise ValueError("Environment secret values cannot exceed 4096 characters.")
+        return secrets
+
+    @field_validator("remove_secrets")
+    @classmethod
+    def validate_remove_secrets(cls, names: list[str]) -> list[str]:
+        if any(not _VARIABLE_NAME.fullmatch(name) for name in names):
+            raise ValueError("Secret names must use letters, digits, and underscores.")
+        return names
+
 
 def _saved_response(record: SavedRequest) -> dict[str, Any]:
     return {
@@ -102,13 +121,24 @@ def _saved_response(record: SavedRequest) -> dict[str, Any]:
     }
 
 
-def _environment_response(record: Environment) -> dict[str, Any]:
+def _environment_response(record: Environment, db: Session) -> dict[str, Any]:
+    if not record.secrets_migrated:
+        try:
+            legacy_ciphertext = encrypt_environment_values(record.variables)
+        except SecretStorageError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        record.secret_variables = {**record.secret_variables, **legacy_ciphertext}
+        record.variables = {}
+        record.secrets_migrated = True
+        db.commit()
+        db.refresh(record)
     return {
         "id": str(record.id),
         "project_id": str(record.project_id),
         "name": record.name,
         "base_url": record.base_url,
         "variables": record.variables,
+        "secrets": {name: {"has_value": True} for name in record.secret_variables},
         "created_at": record.created_at.isoformat(),
         "updated_at": record.updated_at.isoformat(),
     }
@@ -189,7 +219,7 @@ def list_environments(
 ) -> list[dict[str, Any]]:
     project = _project(db, project_id)
     return [
-        _environment_response(record)
+        _environment_response(record, db)
         for record in db.scalars(
             select(Environment)
             .where(Environment.project_id == project.id)
@@ -205,11 +235,23 @@ def create_environment(
     db: Annotated[Session, Depends(get_db)],
 ) -> dict[str, Any]:
     project = _project(db, project_id)
-    record = Environment(project_id=project.id, **payload.model_dump())
+    if set(payload.variables) & set(payload.secrets):
+        raise HTTPException(status_code=422, detail="A variable cannot be both public and secret.")
+    try:
+        encrypted_secrets = encrypt_environment_values(payload.secrets)
+    except SecretStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    record = Environment(
+        project_id=project.id,
+        name=payload.name,
+        base_url=payload.base_url,
+        variables=payload.variables,
+        secret_variables=encrypted_secrets,
+    )
     db.add(record)
     db.commit()
     db.refresh(record)
-    return _environment_response(record)
+    return _environment_response(record, db)
 
 
 @router.put("/environments/{environment_id}")
@@ -227,11 +269,32 @@ def update_environment(
     )
     if record is None:
         raise HTTPException(status_code=404, detail="Environment not found.")
-    for key, value in payload.model_dump().items():
-        setattr(record, key, value)
+    _environment_response(record, db)
+    if set(payload.variables) & set(payload.secrets):
+        raise HTTPException(status_code=422, detail="A variable cannot be both public and secret.")
+    if set(payload.secrets) & set(payload.remove_secrets):
+        raise HTTPException(
+            status_code=422,
+            detail="A secret cannot be replaced and removed together.",
+        )
+    try:
+        encrypted_secrets = encrypt_environment_values(payload.secrets)
+    except SecretStorageError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    record.name = payload.name
+    record.base_url = payload.base_url
+    record.variables = payload.variables
+    record.secret_variables = {
+        **{
+            key: value
+            for key, value in record.secret_variables.items()
+            if key not in payload.remove_secrets
+        },
+        **encrypted_secrets,
+    }
     db.commit()
     db.refresh(record)
-    return _environment_response(record)
+    return _environment_response(record, db)
 
 
 @router.delete("/environments/{environment_id}", status_code=status.HTTP_204_NO_CONTENT)

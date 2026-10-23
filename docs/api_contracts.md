@@ -301,20 +301,20 @@ Assertions must be explicit and serializable. A failed assertion means the confi
 |---|---|---|
 | `GET /projects/{project_id}/campaigns` | Pagination; optional state filter | `200 List[CampaignRead]` |
 | `POST /projects/{project_id}/campaigns` | `CampaignCreate` | `202 CampaignRead` |
-| `GET /campaigns/{campaign_id}` | None | `200 CampaignRead` |
-| `POST /campaigns/{campaign_id}/cancel` | Empty body | `200 CampaignRead` |
-| `GET /campaigns/{campaign_id}/tests` | Pagination | `200 List[TestCaseRead]` |
-| `GET /campaigns/{campaign_id}/executions` | Pagination | `200 List[ExecutionSummary]` |
-| `GET /campaigns/{campaign_id}/events` | Pagination, oldest-first or cursor-based event order explicitly documented in OpenAPI | `200 List[CampaignEventRead]` |
-| `GET /campaigns/{campaign_id}/report` | None | `200 CampaignReport` |
+| `GET /projects/{project_id}/campaigns/{campaign_id}` | None | `200 CampaignRead` |
+| `POST /projects/{project_id}/campaigns/{campaign_id}/cancel` | Empty body | `200 CampaignRead` |
+| `GET /projects/{project_id}/campaigns/{campaign_id}/events` | `after` sequence and bounded `limit`, oldest-first | `200 List[CampaignEventRead]` |
+| `GET /projects/{project_id}/campaigns/{campaign_id}/report` | None | `200 CampaignReport` |
+
+The current create request accepts `name`, `generation_report_id`, `base_url`, optional same-project `environment_id` and `candidate_ids`, `baseline_by_operation`, `max_executions` (1–50), `max_iterations` (1–50), `max_duration_seconds` (1–600), and explicit `confirm_unsafe`. The report must belong to the project. Baseline maps use operation IDs and may include `path_parameters`, `query_parameters`, `headers`, and JSON `body` values, with a 2 MB total cap. Use environment placeholders such as `{{token}}` for secrets; the worker resolves them in memory and does not store resolved requests or response bodies. The API currently persists and queues selected candidates from an existing generation report.
 
 Creation and durability:
 - Before returning `202`, atomically persist the campaign, initial durable job, and initial event in one PostgreSQL transaction.
 - A separate worker claims jobs transactionally using row locks and a lease/expiry model. The worker is not a second API service; it shares domain services and database contracts.
-- The worker must recover expired leases after a crash. State transitions and event writes must be transactionally consistent where possible.
+- The worker recovers expired leases. A case persisted as running when a lease expires is marked inconclusive and is not resent, avoiding blind replay after an uncertain network outcome.
 - Execution is **not exactly-once**. If a process crashes after a request may have been sent but before its outcome was recorded, persist an uncertain outcome and do not blindly replay it.
 - Retries are permitted only when failure is known to have happened before the target request was sent, subject to budgets.
-- Budgets cap execution count, iterations, and elapsed time. Exhaustion terminates normally with state `completed` and a `budget_exhausted` event/termination reason.
+- Budgets cap execution count, iterations, and elapsed time. Exhaustion terminates normally with state `completed` and a `budget_exhausted` termination reason.
 
 State machine:
 
@@ -435,14 +435,13 @@ Content-Type: application/json
 
 {
   "name": "Payments regression",
-  "specification_id": "uuid",
-  "operation_ids": ["uuid"],
-  "generation_options": { "categories": ["positive", "negative", "boundary"] },
-  "budgets": {
-    "max_executions": 100,
-    "max_iterations": 3,
-    "max_elapsed_seconds": 600
-  }
+  "generation_report_id": "uuid",
+  "base_url": "https://api.example.com",
+  "baseline_by_operation": {"operation-id": {"path_parameters": {"id": "123"}}},
+  "max_executions": 10,
+  "max_iterations": 10,
+  "max_duration_seconds": 120,
+  "confirm_unsafe": false
 }
 ```
 

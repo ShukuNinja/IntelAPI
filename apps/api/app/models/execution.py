@@ -16,6 +16,12 @@ class ExecutionRecord(Base):
     project_id: Mapped[UUID] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    campaign_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    test_case_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("test_cases.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     outcome: Mapped[str] = mapped_column(String(32), nullable=False)
     request_snapshot: Mapped[dict] = mapped_column(JSON, nullable=False)
     status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)

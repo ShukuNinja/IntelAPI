@@ -18,6 +18,7 @@ services:
       APP_ENV: ${APP_ENV:-development}
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-api_intelligence}"
+      ENVIRONMENT_ENCRYPTION_KEY: ${ENVIRONMENT_ENCRYPTION_KEY:-}
       CORS_ORIGINS: '["http://localhost:5173","http://127.0.0.1:5173"]'
     ports: ["127.0.0.1:8000:8000"]
     depends_on:
@@ -27,6 +28,17 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+  worker:
+    build: { context: ./apps/api }
+    command: ["python", "-m", "app.modules.campaigns.worker"]
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-api_intelligence}"
+      ENVIRONMENT_ENCRYPTION_KEY: ${ENVIRONMENT_ENCRYPTION_KEY:-}
+    depends_on:
+      db: { condition: service_healthy }
     restart: unless-stopped
   web:
     build: { context: ./apps/web }
