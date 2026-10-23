@@ -67,6 +67,19 @@ def test_candidate_report_records_schema_paths_without_persisting_body_values() 
     )
     assert mismatch["mismatches"] == [{"path": "$/id", "rule": "type", "expected": "integer"}]
     assert secret_value not in str(report)
-    assert "$/id" in _execution_report_markdown(
-        {"id": "r1", "candidate_id": "candidate-1", **report}
+    markdown = _execution_report_markdown(
+        {
+            "id": "r1",
+            "candidate_id": "candidate-1",
+            **report,
+            "feedback": {
+                "action": "propose_next_candidates",
+                "reason": "Continue within the proposal budget.",
+                "proposal_budget": 1,
+                "proposed_candidate_ids": ["candidate-2"],
+            },
+        }
     )
+    assert "$/id" in markdown
+    assert "Feedback decision" in markdown
+    assert "candidate-2" in markdown

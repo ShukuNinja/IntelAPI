@@ -22,6 +22,7 @@ from app.models import (
     Project,
     User,
 )
+from app.modules.adaptive.feedback import decide_follow_up
 from app.modules.api_understanding.service import generate_candidates, generate_generation_report
 from app.modules.execution.service import ExecutionError, execute_request
 from app.modules.projects.router import LOCAL_USER_SUB
@@ -41,6 +42,7 @@ class CandidateExecutionInput(BaseModel):
     body: dict[str, Any] | list[Any] | None = None
     confirm_unsafe: bool = False
     expected_status_code: int | None = Field(default=None, ge=100, le=599)
+    follow_up_budget: int = Field(default=5, ge=0, le=20)
 
 
 def _project(db: Session, project_id: UUID) -> Project:
@@ -150,12 +152,24 @@ async def execute_candidate(
     )
     if operation is None:
         raise HTTPException(status_code=404, detail="Operation not found.")
-    candidate = next(
-        (item for item in generate_candidates(operation, 100) if item["id"] == candidate_id),
-        None,
-    )
+    available_candidates = generate_candidates(operation, 100)
+    candidate = next((item for item in available_candidates if item["id"] == candidate_id), None)
     if candidate is None:
         raise HTTPException(status_code=404, detail="Candidate not found for this operation.")
+    candidate_ids = [item["id"] for item in available_candidates]
+    previously_executed = set(
+        db.scalars(
+            select(ExecutionReportRecord.candidate_id)
+            .where(
+                ExecutionReportRecord.project_id == project.id,
+                ExecutionReportRecord.candidate_id.in_(candidate_ids),
+            )
+            .distinct()
+        )
+    )
+    follow_up_candidate_ids = [
+        item_id for item_id in candidate_ids if item_id not in previously_executed
+    ]
 
     base_url = str(payload.base_url).rstrip("/")
     parsed_base = urlsplit(base_url)
@@ -281,6 +295,14 @@ async def execute_candidate(
             expected_status_code=payload.expected_status_code,
             error=exc.outcome,
         )
+        run_report["feedback"] = decide_follow_up(
+            outcome=exc.outcome,
+            assertions=run_report["assertions"],
+            contract_findings=run_report["contract_findings"],
+            candidate_ids=follow_up_candidate_ids,
+            current_candidate_id=candidate_id,
+            proposal_budget=payload.follow_up_budget,
+        )
         db.add(
             ExecutionReportRecord(
                 project_id=project.id,
@@ -319,6 +341,14 @@ async def execute_candidate(
         response_headers=result["headers"],
         response_body=result["body"],
         expected_status_code=payload.expected_status_code,
+    )
+    run_report["feedback"] = decide_follow_up(
+        outcome=result["outcome"],
+        assertions=run_report["assertions"],
+        contract_findings=run_report["contract_findings"],
+        candidate_ids=follow_up_candidate_ids,
+        current_candidate_id=candidate_id,
+        proposal_budget=payload.follow_up_budget,
     )
     report_record = ExecutionReportRecord(
         project_id=project.id,
@@ -686,6 +716,8 @@ def export_execution_report(
                 "evidence_path",
                 "rule",
                 "expected",
+                "feedback_action",
+                "feedback_proposals",
             ]
         )
         assertions = report["assertions"] or [None]
@@ -707,6 +739,8 @@ def export_execution_report(
                             mismatch["path"] if mismatch else "",
                             mismatch["rule"] if mismatch else "",
                             mismatch["expected"] if mismatch else "",
+                            report.get("feedback", {}).get("action", ""),
+                            ";".join(report.get("feedback", {}).get("proposed_candidate_ids", [])),
                         ]
                     )
         body = buffer.getvalue()
@@ -753,6 +787,20 @@ def _execution_report_markdown(report: dict[str, Any]) -> str:
         )
         lines.extend(
             f"  - Schema check skipped at `{path}`." for path in finding.get("skipped_paths", [])
+        )
+    feedback = report.get("feedback")
+    if feedback:
+        lines.extend(
+            [
+                "",
+                "## Feedback decision",
+                f"- Action: `{feedback['action']}`",
+                f"- Reason: {feedback['reason']}",
+                f"- Proposal budget: {feedback['proposal_budget']}",
+                f"- Proposed candidate IDs: "
+                f"`{', '.join(feedback['proposed_candidate_ids']) or 'none'}`",
+                "- Automatic execution: no",
+            ]
         )
     lines.extend(["", f"Next action: {report['next_action']}"])
     return "\n".join(lines) + "\n"
