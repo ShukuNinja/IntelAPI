@@ -8,10 +8,31 @@ SPECIFICATION = {
     "info": {"title": "Fixture API", "version": "1.0"},
     "paths": {
         "/users/{user_id}": {
-            "parameters": [{"name": "user_id", "in": "path", "required": True, "schema": {"type": "integer", "minimum": 1}}],
+            "parameters": [
+                {
+                    "name": "user_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "integer", "minimum": 1},
+                }
+            ],
             "get": {"operationId": "getUser", "summary": "Get user"},
         },
-        "/users": {"post": {"requestBody": {"content": {"application/json": {"schema": {"type": "object", "required": ["email"], "properties": {"email": {"type": "string"}}}}}}}},
+        "/users": {
+            "post": {
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "object",
+                                "required": ["email"],
+                                "properties": {"email": {"type": "string"}},
+                            }
+                        }
+                    }
+                }
+            }
+        },
     },
 }
 
@@ -56,7 +77,9 @@ def test_candidate_preview_route_returns_explainable_candidates() -> None:
 
 def test_invalid_openapi_version_is_rejected() -> None:
     with TestClient(app) as client:
-        response = client.post("/api/v1/specifications/parse", json={"document": {"openapi": "2.0", "paths": {}}})
+        response = client.post(
+            "/api/v1/specifications/parse", json={"document": {"openapi": "2.0", "paths": {}}}
+        )
     assert response.status_code == 422
 
 

@@ -3,7 +3,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.modules.api_understanding.service import SpecificationError, generate_candidates, parse_specification
+from app.modules.api_understanding.service import (
+    SpecificationError,
+    generate_candidates,
+    parse_specification,
+)
 
 router = APIRouter(prefix="/specifications", tags=["specifications"])
 

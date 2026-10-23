@@ -17,7 +17,9 @@ def parse_specification(document: Any) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise SpecificationError("The specification root must be a JSON object.")
     version = document.get("openapi")
-    if not isinstance(version, str) or not (version.startswith("3.0.") or version.startswith("3.1.")):
+    if not isinstance(version, str) or not (
+        version.startswith("3.0.") or version.startswith("3.1.")
+    ):
         raise SpecificationError("Only OpenAPI 3.0.x and 3.1.x documents are supported.")
     if not isinstance(document.get("info"), dict):
         raise SpecificationError("The specification must include an info object.")
@@ -33,18 +35,24 @@ def parse_specification(document: Any) -> dict[str, Any]:
             if method.lower() not in SUPPORTED_METHODS or not isinstance(operation, dict):
                 continue
             identity = operation.get("operationId") or f"{method.lower()} {path}"
-            stable_id = hashlib.sha256(f"{method.lower()}:{path}:{identity}".encode()).hexdigest()[:20]
-            operations.append({
-                "id": stable_id,
-                "operation_id": operation.get("operationId"),
-                "method": method.upper(),
-                "path": path,
-                "summary": operation.get("summary", ""),
-                "description": operation.get("description", ""),
-                "tags": operation.get("tags", []),
-                "parameters": _merge_parameters(path_item.get("parameters", []), operation.get("parameters", [])),
-                "request_body": operation.get("requestBody", {}),
-            })
+            stable_id = hashlib.sha256(f"{method.lower()}:{path}:{identity}".encode()).hexdigest()[
+                :20
+            ]
+            operations.append(
+                {
+                    "id": stable_id,
+                    "operation_id": operation.get("operationId"),
+                    "method": method.upper(),
+                    "path": path,
+                    "summary": operation.get("summary", ""),
+                    "description": operation.get("description", ""),
+                    "tags": operation.get("tags", []),
+                    "parameters": _merge_parameters(
+                        path_item.get("parameters", []), operation.get("parameters", [])
+                    ),
+                    "request_body": operation.get("requestBody", {}),
+                }
+            )
     return {
         "specification": {
             "title": document["info"].get("title", "Untitled API"),
@@ -65,17 +73,37 @@ def generate_candidates(operation: dict[str, Any], limit: int = 20) -> list[dict
         name = parameter.get("name", "parameter")
         schema = parameter["schema"]
         if parameter.get("required"):
-            candidates.append(_candidate(
-                "required-parameter-omitted",
-                f"Omit required {parameter.get('in', 'query')} parameter '{name}'.",
-                {"remove_parameter": {"in": parameter.get("in", "query"), "name": name}},
-            ))
+            candidates.append(
+                _candidate(
+                    "required-parameter-omitted",
+                    f"Omit required {parameter.get('in', 'query')} parameter '{name}'.",
+                    {"remove_parameter": {"in": parameter.get("in", "query"), "name": name}},
+                )
+            )
         if "enum" in schema and isinstance(schema["enum"], list) and schema["enum"]:
-            candidates.append(_candidate("parameter-enum-boundary", f"Probe a value outside the declared enum for '{name}'.", {name: "__outside_enum__"}))
+            candidates.append(
+                _candidate(
+                    "parameter-enum-boundary",
+                    f"Probe a value outside the declared enum for '{name}'.",
+                    {name: "__outside_enum__"},
+                )
+            )
         elif schema.get("type") == "integer" and isinstance(schema.get("minimum"), (int, float)):
-            candidates.append(_candidate("parameter-minimum-boundary", f"Probe one below the declared minimum for '{name}'.", {name: schema["minimum"] - 1}))
+            candidates.append(
+                _candidate(
+                    "parameter-minimum-boundary",
+                    f"Probe one below the declared minimum for '{name}'.",
+                    {name: schema["minimum"] - 1},
+                )
+            )
         elif schema.get("type") == "string" and isinstance(schema.get("maxLength"), int):
-            candidates.append(_candidate("parameter-length-boundary", f"Probe a string one character longer than maxLength for '{name}'.", {name: "x" * min(schema["maxLength"] + 1, 256)}))
+            candidates.append(
+                _candidate(
+                    "parameter-length-boundary",
+                    f"Probe a string one character longer than maxLength for '{name}'.",
+                    {name: "x" * min(schema["maxLength"] + 1, 256)},
+                )
+            )
     body = operation.get("request_body", {})
     content = body.get("content", {}) if isinstance(body, dict) else {}
     media = content.get("application/json", {}) if isinstance(content, dict) else {}
@@ -85,11 +113,13 @@ def generate_candidates(operation: dict[str, Any], limit: int = 20) -> list[dict
     if isinstance(required, list):
         for name in required:
             if name in properties:
-                candidates.append(_candidate(
-                    "required-body-property-omitted",
-                    f"Omit required request-body property '{name}'.",
-                    {"remove_property": name},
-                ))
+                candidates.append(
+                    _candidate(
+                        "required-body-property-omitted",
+                        f"Omit required request-body property '{name}'.",
+                        {"remove_property": name},
+                    )
+                )
     return candidates[:limit]
 
 
@@ -105,4 +135,10 @@ def _merge_parameters(path_parameters: Any, operation_parameters: Any) -> list[d
 
 def _candidate(kind: str, reason: str, mutation: dict[str, Any]) -> dict[str, Any]:
     seed = json.dumps([kind, reason, mutation], sort_keys=True, separators=(",", ":"))
-    return {"id": hashlib.sha256(seed.encode()).hexdigest()[:20], "kind": kind, "reason": reason, "mutation": mutation, "validation_status": "preview"}
+    return {
+        "id": hashlib.sha256(seed.encode()).hexdigest()[:20],
+        "kind": kind,
+        "reason": reason,
+        "mutation": mutation,
+        "validation_status": "preview",
+    }
