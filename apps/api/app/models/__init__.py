@@ -1,5 +1,6 @@
 from app.models.execution import ExecutionRecord
 from app.models.execution_report import ExecutionReportRecord
+from app.models.finding_triage import FindingTriageRecord
 from app.models.generation_report import GenerationReportRecord
 from app.models.project import Project
 from app.models.request_resource import Environment, SavedRequest
@@ -10,6 +11,7 @@ __all__ = [
     "ApiSpecification",
     "ExecutionRecord",
     "ExecutionReportRecord",
+    "FindingTriageRecord",
     "GenerationReportRecord",
     "Environment",
     "Project",
