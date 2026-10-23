@@ -3,17 +3,32 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
-from app.db.session import engine
+import app.models  # noqa: F401
+from app.db.base import Base
 from app.models import Project, User
 
 
 @pytest.fixture
 def db_session() -> Generator[Session, None, None]:
-    """Run each test in a transaction that is rolled back afterward."""
+    """Use an isolated SQLite database with foreign keys enabled."""
+    engine = create_engine(
+        "sqlite+pysqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(connection, record) -> None:  # type: ignore[no-untyped-def]
+        cursor = connection.cursor()
+        cursor.execute("PRAGMA foreign_keys=ON")
+        cursor.close()
+
+    Base.metadata.create_all(engine)
     connection = engine.connect()
     transaction = connection.begin()
     session = Session(bind=connection, expire_on_commit=False)
@@ -24,6 +39,7 @@ def db_session() -> Generator[Session, None, None]:
         session.close()
         transaction.rollback()
         connection.close()
+        engine.dispose()
 
 
 def test_create_user_and_project(db_session: Session) -> None:

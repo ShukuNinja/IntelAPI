@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import {
-  Activity, Boxes, ChevronDown, CircleHelp, Clock3, Code2, Command, FileSearch2,
-  FlaskConical, FolderKanban, LayoutDashboard, Search, Settings2, ShieldCheck,
+  Activity, Boxes, Clock3, Code2, Command, FileSearch2,
+  FlaskConical, FolderKanban, LayoutDashboard, Settings2, ShieldCheck,
   Sparkles, Waves, type LucideIcon,
 } from 'lucide-react'
 
@@ -24,7 +24,6 @@ function SidebarLink({ item }: { item: NavItem }) {
   const Icon = item.icon
   return <NavLink to={item.to} end={item.to === '/'} className={({ isActive }) => `nav-link${isActive ? ' nav-link--active' : ''}`}>
     <Icon size={17} strokeWidth={1.8} /><span>{item.label}</span>
-    {item.label === 'Findings & Evidence' && <span className="nav-count">8</span>}
   </NavLink>
 }
 
@@ -34,13 +33,12 @@ export function AppShell() {
       <aside className="sidebar">
         <NavLink to="/" className="brand">
           <span className="brand__mark"><Waves size={21} /></span>
-          <span className="brand__copy"><strong>trace<span>line</span></strong><small>API INTELLIGENCE</small></span>
+          <span className="brand__copy"><strong>Intel<span>API</span></strong><small>API INTELLIGENCE</small></span>
         </NavLink>
-        <button className="project-switcher" type="button">
+        <div className="project-switcher">
           <span className="project-switcher__icon"><Command size={16} /></span>
-          <span className="project-switcher__copy"><strong>Acme Platform</strong><small>Personal workspace</small></span>
-          <ChevronDown size={15} />
-        </button>
+          <span className="project-switcher__copy"><strong>Local workspace</strong><small>Single-user mode</small></span>
+        </div>
         <div className="nav-section-label">PLATFORM</div>
         <nav className="nav-list">{primary.map((item) => <SidebarLink key={item.to} item={item} />)}</nav>
         <div className="nav-section-label nav-section-label--spaced">WORKSPACE</div>
@@ -53,9 +51,8 @@ export function AppShell() {
             <NavLink to="/campaigns">View campaigns <span>↗</span></NavLink>
           </div>
           <SidebarLink item={{ label: 'Settings', to: '/settings', icon: Settings2 }} />
-          <button className="nav-link nav-link--button" type="button"><CircleHelp size={17} /><span>Help & documentation</span></button>
           <div className="profile">
-            <div className="avatar">JD</div><div className="profile__copy"><strong>Jordan Davis</strong><small>Local demo account</small></div><button type="button" aria-label="Profile options"><ChevronDown size={15} /></button>
+            <div className="avatar">LW</div><div className="profile__copy"><strong>Local user</strong><small>Authentication not configured</small></div>
           </div>
         </div>
       </aside>
@@ -63,15 +60,12 @@ export function AppShell() {
         <header className="topbar">
           <div className="breadcrumbs"><span>Workspace</span><span className="breadcrumbs__slash">/</span><strong>Acme Platform</strong></div>
           <div className="topbar__actions">
-            <span className="demo-indicator"><span /> Demo data</span>
-            <button className="icon-button search-shortcut" aria-label="Search" type="button"><Search size={17} /><kbd>⌘ K</kbd></button>
-            <button className="icon-button" aria-label="Notifications" type="button"><Activity size={17} /></button>
-            <div className="topbar__divider" />
-            <div className="avatar avatar--small">JD</div>
+            <span className="demo-indicator"><span /> Single-user mode</span>
+            <div className="avatar avatar--small">LW</div>
           </div>
         </header>
         <main className="main-content"><Outlet /></main>
-        <footer className="app-footer"><span><span className="footer-dot" /> System operational <span className="footer-separator">·</span> UI foundation</span><span>Traceline <span className="footer-separator">/</span> Preview build 0.1.0</span></footer>
+        <footer className="app-footer"><span>Local single-user workspace</span><span>IntelAPI <span className="footer-separator">/</span> 0.1.0</span></footer>
       </div>
     </div>
   )

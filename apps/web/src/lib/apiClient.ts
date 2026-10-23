@@ -41,4 +41,25 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   return (await response.json()) as T
 }
 
+export async function apiDownload(path: string, filename: string): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/api${path}`, {
+    credentials: 'include',
+    headers: { Accept: '*/*' },
+  })
+  if (!response.ok) {
+    let message = `API request failed (${response.status})`
+    try {
+      const body = (await response.json()) as { detail?: unknown }
+      if (typeof body.detail === 'string') message = body.detail
+    } catch { /* Keep the HTTP status message for non-JSON errors. */ }
+    throw new ApiError(message, response.status, response.headers.get('x-request-id') ?? undefined)
+  }
+  const objectUrl = URL.createObjectURL(await response.blob())
+  const anchor = document.createElement('a')
+  anchor.href = objectUrl
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(objectUrl)
+}
+
 export const apiClientConfig = { baseUrl: API_BASE_URL || '(same origin)' }

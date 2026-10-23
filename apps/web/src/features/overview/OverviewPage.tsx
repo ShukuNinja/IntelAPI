@@ -1,32 +1,50 @@
-import { ArrowRight, ArrowUpRight, Clock3, FlaskConical, Plus, Sparkles, TrendingUp } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ArrowRight, Database, FileSearch2, FolderOpen, Send } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { Badge } from '../../components/ui/Badge'
 import { Button } from '../../components/ui/Button'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { Panel } from '../../components/ui/Panel'
-import { MethodBadge } from '../../components/ui/MethodBadge'
-import { campaigns, findings, healthChecks, metrics } from '../../lib/demoData'
+import { apiRequest } from '../../lib/apiClient'
+
+type Project = { id: string; name: string; description: string | null }
+type Spec = { id: string; title: string; operation_count: number }
+type Execution = { id: string; status_code: number | null; outcome: string; created_at: string }
+type ProjectSummary = Project & { specifications: Spec[]; executions: Execution[] }
 
 export function OverviewPage() {
+  const [projects, setProjects] = useState<ProjectSummary[]>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let active = true
+    void apiRequest<Project[]>('/v1/projects').then(async items => {
+      const summaries = await Promise.all(items.map(async project => {
+        const [specifications, executions] = await Promise.all([
+          apiRequest<Spec[]>(`/v1/projects/${project.id}/specifications`),
+          apiRequest<Execution[]>(`/v1/projects/${project.id}/executions?limit=5`),
+        ])
+        return { ...project, specifications, executions }
+      }))
+      if (active) setProjects(summaries)
+    }).catch(cause => {
+      if (active) setError(cause instanceof Error ? cause.message : 'Unable to load workspace data.')
+    }).finally(() => { if (active) setLoading(false) })
+    return () => { active = false }
+  }, [])
+
+  const specificationCount = projects.reduce((sum, project) => sum + project.specifications.length, 0)
+  const executionCount = projects.reduce((sum, project) => sum + project.executions.length, 0)
   return <>
-    <PageHeader eyebrow="MONDAY, OCTOBER 19, 2026" title="Good morning, Jordan" description="Here's what's happening across your API workspace."
-      actions={<><Button onClick={() => window.location.assign('/workspace')}><Plus size={16} /> New request</Button><Button variant="primary" onClick={() => window.location.assign('/campaigns')}><FlaskConical size={16} /> Create campaign</Button></>} />
-    <div className="notice notice--demo"><span className="notice__icon"><Sparkles size={16} /></span><div><strong>Preview workspace</strong><p>Numbers and endpoint statuses below are illustrative demo data. No real API requests have been executed.</p></div></div>
-    <div className="metrics-grid">{metrics.map((metric, i) => <div className="metric-card" key={metric.label}><div className="metric-card__top"><span>{metric.label}</span><span className={`metric-icon metric-icon--${i}`}><TrendingUp size={16} /></span></div><div className="metric-card__value">{metric.value}</div><div className="metric-card__foot"><span className={`metric-change metric-change--${metric.tone ?? 'neutral'}`}>{metric.change}</span><span className="metric-period">workspace total</span></div></div>)}</div>
-    <div className="dashboard-grid">
-      <Panel title="Endpoint health" subtitle="Latest recorded checks (demo)" action={<Link className="text-link" to="/health">View all <ArrowRight size={14} /></Link>}>
-        <div className="table-wrap"><table><thead><tr><th>ENDPOINT</th><th>STATUS</th><th>LATENCY</th><th>LAST CHECKED</th></tr></thead><tbody>{healthChecks.slice(0, 3).map((item) => <tr key={item.id}><td><div className="endpoint-cell"><MethodBadge method={item.method} /><span>{item.name}<small>{item.endpoint}</small></span></div></td><td><Badge tone={item.status === 'Healthy' ? 'success' : item.status === 'Degraded' ? 'warning' : 'neutral'}>{item.status}</Badge></td><td className="tabular">{item.latency ? `${item.latency} ms` : '—'}</td><td className="muted-cell">{item.lastChecked}</td></tr>)}</tbody></table></div>
-      </Panel>
-      <Panel title="Recent findings" subtitle="Signals requiring attention" action={<Link className="text-link" to="/findings">All findings <ArrowRight size={14} /></Link>}>
-        <div className="finding-list">{findings.slice(0, 3).map((item) => <Link to="/findings" className="finding-row" key={item.id}><span className={`severity-marker severity-marker--${item.severity.toLowerCase()}`} /><span className="finding-row__copy"><strong>{item.title}</strong><small>{item.id} <span>·</span> {item.endpoint}</small></span><ArrowUpRight size={15} className="muted-icon" /></Link>)}</div>
-      </Panel>
-      <Panel title="Campaign activity" subtitle="Exploration and validation runs" action={<Link className="text-link" to="/campaigns">View campaigns <ArrowRight size={14} /></Link>} className="span-2">
-        <div className="campaign-list">{campaigns.slice(0, 2).map((item) => <div className="campaign-row" key={item.id}><span className="campaign-icon"><FlaskConical size={17} /></span><div className="campaign-row__copy"><strong>{item.name}</strong><small>{item.target} <span>·</span> Updated {item.updatedAt}</small></div><div className="campaign-row__stats"><strong>{item.tests}</strong><small>tests</small></div><div className="campaign-row__stats"><strong>{item.findings}</strong><small>signals</small></div><Badge tone={item.status === 'Running' ? 'info' : 'success'}>{item.status}</Badge></div>)}</div>
-      </Panel>
-      <Panel title="Quick start" subtitle="Continue building your workspace" className="quick-start">
-        <Link className="quick-action" to="/explorer"><span className="quick-action__icon"><Clock3 size={17} /></span><span><strong>Import an API specification</strong><small>Map endpoints from an OpenAPI document.</small></span><ArrowRight size={15} /></Link>
-        <Link className="quick-action" to="/workspace"><span className="quick-action__icon"><Plus size={17} /></span><span><strong>Send your first request</strong><small>Build a request in the API workspace.</small></span><ArrowRight size={15} /></Link>
-      </Panel>
+    <PageHeader eyebrow="WORKSPACE" title="API testing overview" description="A live summary of your projects, imported specifications, and recent requests."
+      actions={<><Link to="/explorer"><Button><FileSearch2 size={15} /> Import specification</Button></Link><Link to="/workspace"><Button variant="primary"><Send size={15} /> New request</Button></Link></>} />
+    {error && <p role="alert" className="mb-4 text-xs text-rose-300">{error}</p>}
+    <div className="metrics-grid">
+      {[['Projects', projects.length], ['Specifications', specificationCount], ['Recent requests', executionCount]].map(([label, value]) => <div className="metric-card" key={label}><div className="metric-card__top"><span>{label}</span><span className="metric-icon metric-icon--0"><Database size={16} /></span></div><div className="metric-card__value">{loading ? '…' : value}</div><div className="metric-card__foot"><span className="metric-period">from stored project data</span></div></div>)}
     </div>
+    <Panel title="Projects" subtitle="Stored workspaces and their most recent real executions.">
+      {loading ? <div className="p-5 text-xs text-slate-400">Loading projects…</div> : projects.length ? <div className="divide-y divide-slate-800">{projects.map(project => <article key={project.id} className="p-4"><div className="flex flex-wrap items-center gap-3"><FolderOpen size={17} className="text-indigo-300" /><strong className="text-sm text-slate-100">{project.name}</strong><Badge tone="info">{project.specifications.length} specs</Badge><Badge>{project.executions.length} recent requests</Badge><Link className="ml-auto text-xs text-indigo-300 hover:text-indigo-200" to={`/explorer?project=${project.id}`}>Open project <ArrowRight size={13} className="inline" /></Link></div>{project.description && <p className="mb-0 mt-2 text-xs text-slate-400">{project.description}</p>}{project.executions.length > 0 && <p className="mb-0 mt-2 text-xs text-slate-500">Latest: {project.executions[0].status_code ?? project.executions[0].outcome} · {new Date(project.executions[0].created_at).toLocaleString()}</p>}</article>)}</div> : <div className="p-5"><h3 className="m-0 text-sm font-medium text-slate-100">No projects yet</h3><p className="my-2 text-xs text-slate-400">Create a project in API Explorer, then import its first API specification.</p><Link to="/explorer"><Button variant="primary"><FileSearch2 size={15} /> Go to API Explorer</Button></Link></div>}
+    </Panel>
   </>
 }

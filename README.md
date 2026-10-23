@@ -32,7 +32,7 @@ The backend is a modular monolith. Do not introduce microservices, Kubernetes, R
 
 ## Project status
 
-The current repository is a foundation/scaffold, not a completed API-testing product. The last verified baseline had Docker Compose, API health endpoints, a minimal Alembic baseline, and a demo-backed frontend. Core product capabilities still require implementation.
+The current product has working vertical slices for OpenAPI/Swagger parsing, deterministic candidate previews and reports, persisted single-user projects/specifications, and bounded HTTP request execution with project history. PostgreSQL-backed authentication, discovery from remote docs URLs, saved request collections/environments, durable generation reports, candidate execution and assertions, feedback policies, readiness/drift analysis, and report exports remain incomplete. The Overview, campaigns, findings, and health destinations still contain demo-backed presentation and must not be read as evidence from live APIs.
 
 The implementation-status document records what was verified, what remains missing, and the commands to re-check the working tree. Do not treat demo data, demo health indicators, or sample findings as observations about real target APIs.
 

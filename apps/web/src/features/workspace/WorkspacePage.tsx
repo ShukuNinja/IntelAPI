@@ -1,37 +1,91 @@
-import { useState } from 'react'
-import { ChevronDown, Copy, Plus, RotateCcw, Save, Send, Settings2 } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Clock3, Send } from 'lucide-react'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { Panel } from '../../components/ui/Panel'
+import { apiRequest } from '../../lib/apiClient'
 
-const sampleBody = JSON.stringify({ "page": 1, "limit": 20 }, null, 2)
+type Project = { id: string; name: string; description: string | null }
+type Execution = {
+  id: string; status_code: number; elapsed_ms: number; response_bytes: number
+  headers: Record<string, string>; body: unknown; origin: string; outcome: string
+  created_at: string
+}
+type HistoryEntry = {
+  id: string; method: string; origin: string; status_code: number | null
+  elapsed_ms: number | null; response_bytes: number | null; outcome: string
+  error_summary: string | null; created_at: string
+}
+
 export function WorkspacePage() {
   const [method, setMethod] = useState('GET')
-  const [url, setUrl] = useState('https://api.example.com/v1/users')
-  const [body, setBody] = useState(sampleBody)
-  const [activeTab, setActiveTab] = useState('Params')
-  const [responseTab, setResponseTab] = useState('Pretty')
-  const [showNotice, setShowNotice] = useState(false)
+  const [url, setUrl] = useState('')
+  const [headersText, setHeadersText] = useState('{\n  "Accept": "application/json"\n}')
+  const [body, setBody] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [projects, setProjects] = useState<Project[]>([])
+  const [history, setHistory] = useState<HistoryEntry[]>([])
+  const [response, setResponse] = useState<Execution | null>(null)
+  const [error, setError] = useState('')
+  const [busy, setBusy] = useState(false)
+  const unsafe = !['GET', 'HEAD', 'OPTIONS'].includes(method)
+
+  async function refreshHistory(id: string) {
+    if (!id) { setHistory([]); return }
+    setHistory(await apiRequest<HistoryEntry[]>(`/v1/projects/${id}/executions`))
+  }
+
+  useEffect(() => {
+    void apiRequest<Project[]>('/v1/projects').then(items => {
+      setProjects(items)
+      if (items[0]) setProjectId(items[0].id)
+    }).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load projects.'))
+  }, [])
+
+  useEffect(() => {
+    void refreshHistory(projectId).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load request history.'))
+  }, [projectId])
+
+  async function sendRequest() {
+    setError(''); setResponse(null)
+    if (!projectId) { setError('Create or select a project in API Explorer before sending requests.'); return }
+    if (unsafe && !window.confirm(`Send this ${method} request to ${url}? It may change remote data.`)) return
+    let headers: Record<string, string>
+    try {
+      headers = JSON.parse(headersText) as Record<string, string>
+      if (!headers || Array.isArray(headers) || typeof headers !== 'object' || Object.values(headers).some(value => typeof value !== 'string')) throw new Error('Headers must be a JSON object with string values.')
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Headers must be valid JSON.'); return }
+    setBusy(true)
+    try {
+      const result = await apiRequest<Execution>(`/v1/projects/${projectId}/executions`, {
+        method: 'POST',
+        body: JSON.stringify({ method, url, headers, body: body || null, confirm_unsafe: unsafe }),
+      })
+      setResponse(result)
+      await refreshHistory(projectId)
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'The request could not be completed.') }
+    finally { setBusy(false) }
+  }
+
   return <>
-    <PageHeader eyebrow="REQUEST BUILDER" title="API Workspace" description="Compose requests, inspect responses, and save repeatable API checks."
-      actions={<><Button><Save size={15} /> Save request</Button><Button variant="primary" onClick={() => setShowNotice(true)}><Send size={15} /> Send request</Button></>} />
-    {showNotice && <div className="notice notice--warning"><span className="notice__icon"><Settings2 size={16} /></span><div><strong>Execution is not connected yet</strong><p>This stage implements the request editor only. No network request was sent. The backend execution service will be connected in a later milestone.</p></div><button className="notice__close" onClick={() => setShowNotice(false)} aria-label="Dismiss">×</button></div>}
-    <div className="workspace-toolbar"><div className="crumb-small"><span>Collections</span><span>/</span><strong>Users API</strong><ChevronDown size={14} /></div><div className="toolbar-actions"><Badge>Unsaved</Badge><Button size="sm"><Copy size={14} /> Copy cURL</Button><Button size="sm"><RotateCcw size={14} /> Reset</Button></div></div>
-    <Panel title="Request" subtitle="Configure the HTTP request">
-      <div className="request-line"><select aria-label="HTTP method" value={method} onChange={(e) => setMethod(e.target.value)}>{['GET','POST','PUT','PATCH','DELETE','HEAD','OPTIONS'].map(m => <option key={m}>{m}</option>)}</select><input aria-label="Request URL" value={url} onChange={(e) => setUrl(e.target.value)} spellCheck={false} /><Button variant="primary" onClick={() => setShowNotice(true)}><Send size={15} /> Send</Button></div>
-      <div className="tab-bar">{['Params','Headers','Body','Auth','Scripts'].map(tab => <button key={tab} className={`tab-button${activeTab === tab ? ' tab-button--active' : ''}`} onClick={() => setActiveTab(tab)}>{tab}{tab === 'Headers' && <span className="tab-count">2</span>}</button>)}</div>
-      {activeTab === 'Params' && <div className="key-value-table"><div className="key-value-row key-value-row--head"><span>KEY</span><span>VALUE</span><span>DESCRIPTION</span><span /></div><div className="key-value-row"><input aria-label="Parameter key" placeholder="page" /><input aria-label="Parameter value" placeholder="1" /><input aria-label="Parameter description" placeholder="Page number" /><button aria-label="Remove parameter">×</button></div><div className="key-value-row"><input aria-label="Parameter key" placeholder="limit" /><input aria-label="Parameter value" placeholder="20" /><input aria-label="Parameter description" placeholder="Page size" /><button aria-label="Remove parameter">×</button></div><button className="add-row"><Plus size={14} /> Add parameter</button></div>}
-      {activeTab === 'Headers' && <div className="key-value-table"><div className="key-value-row key-value-row--head"><span>KEY</span><span>VALUE</span><span>DESCRIPTION</span><span /></div><div className="key-value-row"><input aria-label="Header key" value="Accept" readOnly /><input aria-label="Header value" value="application/json" readOnly /><input aria-label="Header description" placeholder="Response format" /><span /></div><div className="key-value-row"><input aria-label="Header key" placeholder="Authorization" /><input aria-label="Header value" placeholder="Bearer token" /><input aria-label="Header description" placeholder="Optional" /><span /></div><button className="add-row"><Plus size={14} /> Add header</button></div>}
-      {activeTab === 'Body' && <div className="editor-wrap"><div className="editor-toolbar"><span>JSON</span><button type="button" onClick={() => setBody(sampleBody)}>Reset example</button></div><textarea className="code-editor" aria-label="Request body JSON" value={body} onChange={e => setBody(e.target.value)} spellCheck={false} /></div>}
-      {activeTab === 'Auth' && <div className="auth-placeholder"><label htmlFor="auth-type">Authorization type</label><select id="auth-type"><option>No Auth</option><option>Bearer Token (UI placeholder)</option><option>Basic Auth (UI placeholder)</option><option>API Key (UI placeholder)</option></select><p>Credential handling will be implemented with backend-side secret protection.</p></div>}
-      {activeTab === 'Scripts' && <div className="empty-inline"><Settings2 size={18} /><div><strong>Request scripts are out of MVP scope</strong><p>A sandboxed scripting runtime is not implemented in this version.</p></div></div>}
+    <PageHeader eyebrow="REQUEST BUILDER" title="API Workspace" description="Send bounded requests, inspect real responses, and review project execution history."
+      actions={<Button variant="primary" onClick={() => void sendRequest()} disabled={busy || !url.trim()}><Send size={15} />{busy ? 'Sending…' : 'Send request'}</Button>} />
+    <Panel title="Request" subtitle="Requests are sent by the backend with timeout, response-size, redirect, and target-network controls.">
+      <div className="grid gap-4 p-4">
+        <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Select a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <div className="grid gap-2 sm:grid-cols-[130px_1fr]"><select className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" aria-label="HTTP method" value={method} onChange={event => setMethod(event.target.value)}>{['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'].map(value => <option key={value}>{value}</option>)}</select><input className="rounded border border-slate-700 bg-slate-950 px-3 py-2 font-mono text-sm" aria-label="Request URL" value={url} onChange={event => setUrl(event.target.value)} placeholder="http://localhost:8000/api/resource" spellCheck={false} /></div>
+        {unsafe && <p className="m-0 text-xs text-amber-300">Sending {method} can change target data. The app asks for confirmation before sending.</p>}
+        <label className="text-xs text-slate-300">Headers (JSON object)<textarea className="mt-1 min-h-24 w-full rounded border border-slate-700 bg-slate-950 p-3 font-mono text-xs" value={headersText} onChange={event => setHeadersText(event.target.value)} spellCheck={false} /></label>
+        <label className="text-xs text-slate-300">Request body<textarea className="mt-1 min-h-36 w-full rounded border border-slate-700 bg-slate-950 p-3 font-mono text-xs" value={body} onChange={event => setBody(event.target.value)} spellCheck={false} placeholder="Optional request body" /></label>
+        {error && <p role="alert" className="m-0 text-xs text-rose-300">{error}</p>}
+      </div>
     </Panel>
-    <Panel title="Response" subtitle="Response preview" className="response-panel" action={<Badge>Not executed</Badge>}>
-      <div className="response-empty"><span className="response-empty__icon"><Send size={20} /></span><h3>No response yet</h3><p>Configure a request, then connect the backend execution engine to send it safely.</p></div>
-      <div className="response-meta"><span>STATUS <strong>—</strong></span><span>TIME <strong>—</strong></span><span>SIZE <strong>—</strong></span></div>
-      <div className="tab-bar">{['Pretty','Raw','Headers','Cookies'].map(tab => <button key={tab} className={`tab-button${responseTab === tab ? ' tab-button--active' : ''}`} onClick={() => setResponseTab(tab)}>{tab}</button>)}</div>
-      <div className="response-code"><span className="line-number">1</span><span className="code-muted">{responseTab === 'Pretty' ? 'Response content will appear here.' : `No ${responseTab.toLowerCase()} captured.`}</span></div>
+    <Panel title="Response" subtitle="Actual response returned by the selected target." action={response ? <Badge tone={response.status_code < 400 ? 'success' : 'warning'}>{response.status_code}</Badge> : <Badge>Not sent</Badge>}>
+      {response ? <div className="grid gap-3 p-4"><div className="flex flex-wrap gap-4 text-xs text-slate-400"><span>TIME <strong className="text-slate-100">{response.elapsed_ms} ms</strong></span><span>SIZE <strong className="text-slate-100">{response.response_bytes} bytes</strong></span><span>ORIGIN <strong className="text-slate-100">{response.origin}</strong></span></div><pre className="max-h-[32rem] overflow-auto rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs text-slate-200">{JSON.stringify(response.body, null, 2)}</pre><details><summary className="cursor-pointer text-xs text-slate-400">Response headers</summary><pre className="mt-2 text-xs text-slate-400">{JSON.stringify(response.headers, null, 2)}</pre></details></div> : <div className="p-5 text-xs text-slate-500">Send a request to see its real response here.</div>}
+    </Panel>
+    <Panel title="Recent executions" subtitle="History stores status and timing metadata. Request credentials and response bodies are not persisted.">
+      {history.length ? <div className="divide-y divide-slate-800">{history.map(item => <div key={item.id} className="flex flex-wrap items-center gap-3 p-3 text-xs"><Badge tone={item.status_code && item.status_code < 400 ? 'success' : item.status_code ? 'warning' : 'neutral'}>{item.status_code ?? item.outcome}</Badge><strong>{item.method}</strong><code className="text-slate-400">{item.origin}</code><span className="text-slate-500">{item.elapsed_ms == null ? '—' : `${item.elapsed_ms} ms`}</span><time className="ml-auto text-slate-500">{new Date(item.created_at).toLocaleString()}</time></div>)}</div> : <div className="flex items-center gap-2 p-4 text-xs text-slate-500"><Clock3 size={15} />No request history for this project.</div>}
     </Panel>
   </>
 }

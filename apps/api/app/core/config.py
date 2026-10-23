@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(
         default_factory=lambda: ["http://127.0.0.1:5173", "http://localhost:5173"]
     )
+    allow_local_targets: bool = True
+    allow_private_network_targets: bool = False
+    http_connect_timeout_seconds: float = Field(default=5.0, gt=0, le=30)
+    http_read_timeout_seconds: float = Field(default=15.0, gt=0, le=60)
+    http_max_response_bytes: int = Field(default=2_000_000, ge=1024, le=10_000_000)
 
 
 @lru_cache
