@@ -1,5 +1,10 @@
 """Public interfaces for test candidate generation."""
 
+from app.modules.test_generation.approaches import (
+    ApproachGenerationResult,
+    GenerationApproach,
+    generate_for_approach,
+)
 from app.modules.test_generation.deduplication import (
     CandidateDeduplicationError,
     deduplicate_candidates,
@@ -23,6 +28,9 @@ from app.modules.test_generation.validation import (
 
 __all__ = [
     "CandidateCategory",
+    "ApproachGenerationResult",
+    "GenerationApproach",
+    "generate_for_approach",
     "CandidateDeduplicationError",
     "CandidateValidationError",
     "TestCandidate",
