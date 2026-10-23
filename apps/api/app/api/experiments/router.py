@@ -70,6 +70,27 @@ def _experiment_read(db: Session, row: Experiment) -> ExperimentRead:
     states: list[str] = []
     for run, campaign in results:
         states.append(campaign.state)
+        generation_metadata = dict(run.generation_metadata)
+        llm_status = generation_metadata.get("llm_status")
+        warning = generation_metadata.get("warning")
+        legacy_attempted = llm_status == "succeeded" or (
+            llm_status == "failed"
+            and isinstance(warning, str)
+            and warning.startswith("LLM candidate generation failed:")
+        )
+        generation_metadata.setdefault("llm_request_attempted", legacy_attempted)
+        generation_metadata.setdefault(
+            "semantic_facts_supplied_to_model",
+            run.approach == GenerationApproach.SEMANTIC_ASSISTED.value
+            and legacy_attempted
+            and int(generation_metadata.get("semantic_fact_count", 0)) > 0,
+        )
+        generation_metadata.setdefault("rejected_candidates", [])
+        generation_metadata.setdefault("rejected_candidate_count", 0)
+        generation_metadata.setdefault(
+            "requested_llm_provider", row.configuration.get("llm_provider")
+        )
+        generation_metadata.setdefault("requested_llm_model", row.configuration.get("llm_model"))
         candidates = (
             db.scalar(
                 select(func.count())
@@ -93,7 +114,7 @@ def _experiment_read(db: Session, row: Experiment) -> ExperimentRead:
                 approach=GenerationApproach(run.approach),
                 state=campaign.state,
                 configuration=run.configuration,
-                generation_metadata=run.generation_metadata,
+                generation_metadata=generation_metadata,
                 candidate_count=candidates,
                 execution_count=executions,
             )
