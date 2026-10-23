@@ -19,12 +19,16 @@ paths:
 
 
 class FakeProvider:
-    def __init__(self) -> None:
+    def __init__(self, text: str | None = None) -> None:
         self.requests: list[LLMRequest] = []
+        self.text = text or (
+            '[{"category":"positive","title":"List items",'
+            '"parameters":{},"body":null,"rationale":"Checks the list operation."}]'
+        )
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
-        return LLMResponse(text="[]", provider="fake", model="fake-model")
+        return LLMResponse(text=self.text, provider="fake", model="fake-model")
 
 
 def _operations():
@@ -79,3 +83,15 @@ def test_feedback_and_evidence_approaches_share_generation_but_have_distinct_pol
     assert feedback.generation_policy_version != evidence.generation_policy_version
     assert feedback.generation_mode == "deterministic_pool"
     assert evidence.generation_mode == "deterministic_pool"
+
+
+def test_empty_llm_output_is_recorded_and_falls_back_to_deterministic_candidates() -> None:
+    result = generate_for_approach(
+        GenerationApproach.LLM_BASELINE,
+        _operations(),
+        provider=FakeProvider("[]"),
+    )
+
+    assert result.generation_mode == "deterministic_fallback"
+    assert result.llm_status == "empty"
+    assert result.candidates

@@ -25,7 +25,11 @@ from app.models.execution import Execution
 from app.models.finding import EvidenceReference, Finding
 from app.models.health_check import AssertionResult
 from app.models.saved_request import SavedRequest
-from app.modules.adaptive import CandidateSignals, select_next_candidates
+from app.modules.adaptive import (
+    AdaptiveScoringConfig,
+    CandidateSignals,
+    select_next_candidates,
+)
 from app.modules.execution.service import execute_request_definition, execute_saved_request
 from app.modules.findings.service import is_sensitive_target
 from app.modules.test_generation import CandidateCategory, TestCandidate
@@ -326,11 +330,24 @@ def _evaluate_case(
 def _select_next_case(
     db: Session, campaign_id: UUID, pending: list[TestCase]
 ) -> tuple[TestCase, dict[str, object] | None]:
+    campaign = db.get(Campaign, campaign_id)
+    approach = campaign.configuration.get("approach") if campaign is not None else None
     openapi_cases = [
         case for case in pending if case.request_override.get("source") == "openapi_candidate"
     ]
     if not openapi_cases:
         return pending[0], None
+    if approach in {"llm_baseline", "semantic_assisted"}:
+        selected = min(openapi_cases, key=lambda case: (case.created_at, str(case.id)))
+        return selected, {
+            "policy_version": "fixed-generation-order-v1",
+            "rationale": (
+                "Baseline candidate order is fixed; prior execution feedback is not used "
+                "for selection."
+            ),
+            "test_case_id": str(selected.id),
+            "evidence_ids": [],
+        }
     history = db.execute(
         select(
             TestCase.operation_id, TestCase.category, Execution.response_status_code, Execution.id
@@ -390,7 +407,24 @@ def _select_next_case(
             ),
             evidence_ids=tuple(str(row[3]) for row in operation_history),
         )
-    ranked = select_next_candidates(candidates, signals, limit=1, diversify=True)
+    scoring_config = None
+    if approach == "evidence_backed":
+        scoring_config = AdaptiveScoringConfig(
+            policy_version="evidence-coverage-v1",
+            unexpectedness_weight=0.15,
+            novelty_weight=0.35,
+            boundary_relevance_weight=0.1,
+            inconsistency_weight=0.05,
+            exploration_value_weight=0.35,
+            cost_risk_weight=0.25,
+        )
+    ranked = select_next_candidates(
+        candidates,
+        signals,
+        limit=1,
+        diversify=True,
+        config=scoring_config or AdaptiveScoringConfig(),
+    )
     if not ranked:
         return pending[0], None
     result = ranked[0]
@@ -475,7 +509,15 @@ def process_campaign(campaign_id: UUID) -> None:
                 )
                 return
             if selection is not None:
-                _event(db, campaign_id, "adaptive_candidate_selected", selection)
+                selection_event = (
+                    "evidence_candidate_selected"
+                    if campaign.configuration.get("approach") == "evidence_backed"
+                    else "experiment_candidate_selected"
+                    if campaign.configuration.get("approach")
+                    in {"llm_baseline", "semantic_assisted"}
+                    else "adaptive_candidate_selected"
+                )
+                _event(db, campaign_id, selection_event, selection)
             count = (
                 db.scalar(
                     select(func.count())

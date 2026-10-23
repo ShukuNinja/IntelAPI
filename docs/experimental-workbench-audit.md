@@ -4,7 +4,7 @@
 **Branch:** `frontend-backend_integration`  
 **Scope:** the existing application paths relevant to a comparable, persisted API-testing workbench.
 
-This audit distinguishes implementation evidence from the requested experimental behavior. The repository's `docs/COMPLETION_LOG.md` records prior backend and frontend verification; those results are historical and are not a claim that this checkout was re-run during this audit.
+This is the initial-state audit captured before the workbench changes in the current task. It distinguishes implementation evidence from the requested experimental behavior. The repository's `docs/COMPLETION_LOG.md` records prior backend and frontend verification; those results are historical and are not a claim that this checkout was re-run during the audit.
 
 ## Existing architecture and status
 

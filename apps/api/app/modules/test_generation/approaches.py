@@ -3,6 +3,7 @@
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import Any
 
 from app.integrations.llm import LLMProvider, create_llm_provider
 from app.modules.api_understanding.models import NormalizedOperation
@@ -46,8 +47,9 @@ def generate_for_approach(
     approach: GenerationApproach,
     operations: tuple[NormalizedOperation, ...],
     *,
-    semantic_facts_by_operation: Mapping[str, Sequence[Mapping[str, object]]] | None = None,
+    semantic_facts_by_operation: Mapping[str, Sequence[Mapping[str, Any]]] | None = None,
     provider: LLMProvider | None = None,
+    allow_llm: bool = True,
 ) -> ApproachGenerationResult:
     """Generate a validated candidate pool using one explicit approach policy.
 
@@ -71,12 +73,24 @@ def generate_for_approach(
 
     semantic_count = 0
     if approach is GenerationApproach.SEMANTIC_ASSISTED:
-        semantic_count = sum(
-            len(semantic_facts_by_operation.get(operation.operation_key, ()))
-            for operation in operations
-        ) if semantic_facts_by_operation is not None else 0
+        semantic_count = (
+            sum(
+                len(semantic_facts_by_operation.get(operation.operation_key, ()))
+                for operation in operations
+            )
+            if semantic_facts_by_operation is not None
+            else 0
+        )
 
     fallback = generate_candidates(operations)
+    if not allow_llm:
+        return _fallback_result(
+            approach,
+            fallback,
+            semantic_count,
+            "LLM generation is disabled for this experiment.",
+            "disabled",
+        )
     try:
         configured_provider = provider if provider is not None else create_llm_provider()
     except Exception:
@@ -97,7 +111,7 @@ def generate_for_approach(
     try:
         proposals: list[TestCandidate] = []
         for operation in operations:
-            facts: Sequence[Mapping[str, object]] = ()
+            facts: Sequence[Mapping[str, Any]] = ()
             if approach is GenerationApproach.SEMANTIC_ASSISTED and semantic_facts_by_operation:
                 facts = semantic_facts_by_operation.get(operation.operation_key, ())
             proposals.extend(
@@ -112,9 +126,19 @@ def generate_for_approach(
             "failed",
         )
 
+    unique_proposals = deduplicate_candidates(proposals)
+    if not unique_proposals:
+        return _fallback_result(
+            approach,
+            fallback,
+            semantic_count,
+            "The LLM returned no candidates; deterministic candidates were used.",
+            "empty",
+        )
+
     return ApproachGenerationResult(
         approach=approach,
-        candidates=deduplicate_candidates(proposals),
+        candidates=unique_proposals,
         generation_policy_version=POLICY_VERSIONS[approach],
         generation_mode="llm",
         llm_status="succeeded",

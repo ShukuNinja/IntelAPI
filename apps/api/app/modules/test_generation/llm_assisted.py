@@ -25,6 +25,7 @@ MAX_PROPOSALS = 50
 MAX_OUTPUT_TOKENS = 1200
 MAX_JSON_DEPTH = 32
 MAX_SEMANTIC_FACTS = 40
+PROMPT_VERSION = "api-test-generation-v1"
 
 
 class LLMProposalError(ValueError):
@@ -42,6 +43,7 @@ def _operation_context(operation: NormalizedOperation) -> dict[str, Any]:
         "parameters": list(operation.parameters),
         "request_body_schema": operation.request_body_schema,
         "response_schemas": operation.response_schemas,
+        "security_requirements": list(operation.security_requirements),
     }
 
 
@@ -103,6 +105,7 @@ def _check_json_depth(value: Any, depth: int = 0) -> None:
         for child in value:
             _check_json_depth(child, depth + 1)
 
+
 def _normalize_json_response(response_text: str) -> str:
     """Remove a single surrounding Markdown JSON code fence."""
     text = response_text.strip()
@@ -144,16 +147,11 @@ def _parse_proposals(response_text: str) -> list[dict[str, Any]]:
         raise
     except (json.JSONDecodeError, ValueError, RecursionError) as exc:
         if isinstance(exc, json.JSONDecodeError):
-            detail = (
-                f"JSON parsing failed at line {exc.lineno}, "
-                f"column {exc.colno}."
-            )
+            detail = f"JSON parsing failed at line {exc.lineno}, column {exc.colno}."
         else:
             detail = f"JSON parsing failed ({type(exc).__name__})."
 
-        raise LLMProposalError(
-            f"LLM response must contain valid, bounded JSON. {detail}"
-        ) from exc
+        raise LLMProposalError(f"LLM response must contain valid, bounded JSON. {detail}") from exc
 
     if not isinstance(parsed, list):
         raise LLMProposalError("LLM response must be a JSON array.")
@@ -193,6 +191,18 @@ def _candidate_from_proposal(
         raise LLMProposalError("Proposal rationale must be a non-empty string.")
     if not isinstance(parameters, dict):
         raise LLMProposalError("Proposal parameters must be a JSON object.")
+    declared_parameters = {
+        parameter.get("name")
+        for parameter in operation.parameters
+        if isinstance(parameter.get("name"), str)
+        and parameter.get("in") in {"path", "query", "header"}
+        and not (
+            parameter.get("in") == "header"
+            and parameter["name"].lower() in {"authorization", "cookie", "host"}
+        )
+    }
+    if not set(parameters).issubset(declared_parameters):
+        raise LLMProposalError("Proposal contains parameters not declared by the operation.")
     if body is not None and not isinstance(body, dict):
         raise LLMProposalError("Proposal body must be a JSON object or null.")
 

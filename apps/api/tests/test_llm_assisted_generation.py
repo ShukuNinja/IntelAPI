@@ -73,6 +73,7 @@ def test_generates_valid_candidate_from_fake_provider() -> None:
         json.dumps([_proposal(extra="unexpected")]),
         json.dumps([_proposal(category="unknown")]),
         json.dumps([_proposal(parameters=[])]),
+        json.dumps([_proposal(parameters={"undocumented": "value"})]),
         json.dumps([_proposal(body=[])]),
         json.dumps([_proposal(title="")]),
     ],

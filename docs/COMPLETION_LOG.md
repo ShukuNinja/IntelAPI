@@ -234,3 +234,34 @@ For each subsequent milestone, append the date, changed capabilities/files, migr
 ### Remaining limits
 
 - This verifies the complete MVP path against the approved public test service. It does not validate a customer-specific target API, credentials, or its contract. Use a representative non-production customer target for that separate acceptance when one is configured.
+
+## 2026-10-23 — Experimental workbench foundation
+
+### Implemented
+
+- Added `0008_experimental_workbench` with project-owned experiment snapshots and per-approach runs linked to the existing durable campaign records.
+- Added authenticated experiment creation, history, detail, and comparison APIs. One experiment is pinned to one specification hash and shares operation selection, categories, environment, and execution budgets across its selected approaches.
+- Added separate generation behavior for LLM baseline, semantic-assisted, feedback-guided, and evidence-backed runs. The baseline excludes semantic facts; semantic-assisted generation receives persisted extracted facts. LLM use is explicitly opt-in and falls back to a deterministic candidate pool when disabled, unavailable, empty, or invalid.
+- Integrated candidate parameter values into campaign request construction while restricting LLM parameters to declared non-sensitive operation parameters.
+- Kept baseline approaches in fixed candidate order, wired feedback-guided runs to the existing adaptive selector, and added a separately weighted evidence/coverage policy with persisted selection rationale and execution references.
+- Added shared comparison metrics derived from candidate, execution, assertion, finding, and campaign records. Validity, constraint coverage, ground-truth-dependent rates, token/cost, diagnosis accuracy, and reproducibility return `N/A` with an explicit reason when the required records are not available.
+- Added the Experimental Workbench page for selecting specification, operations, target environment, and approaches; starting and cancelling runs; inspecting candidate/request/response evidence and durable selection events; comparing metrics; and exporting comparison JSON.
+- Added an audit document at `docs/experimental-workbench-audit.md`. Updated the database schema record for the new experiment tables.
+- Removed raw LLM response excerpts and provider exception messages from diagnostics in the prior candidate-generation path.
+
+### Verification
+
+- Backend `python -m ruff check .` — passed.
+- Backend targeted Ruff formatting check and `python -m compileall -q app` — passed.
+- Frontend `npm run typecheck`, `npm run lint`, and `npm run build` — passed; ESLint reports three existing Fast Refresh warnings.
+- Added intelligence and API tests for distinct prompts, deterministic fallback, empty LLM responses, four-run persistence, comparison metrics, and project ownership. Backend pytest could not run: the host has Python 3.11.9 and does not have the `pytest` module; Docker Desktop's engine is unavailable, so the project API container could not be used.
+- The new Alembic revision was not applied or checked against PostgreSQL in this environment.
+
+### Known limitations
+
+- Only the existing NVIDIA provider is implemented. Provider/model selection and Groq integration remain unfinished; the UI opts in to the server-configured provider.
+- LLM token usage and provider cost are not exposed by the current adapter. Candidate validation failures are not persisted, so validity rate is `N/A`.
+- Constraint IDs are not attached to executions, and there is no labeled ground truth, triage event history, or repeat-trial configuration. Related metrics remain `N/A`.
+- Approach runs share the configured target but the workbench cannot reset target state. The UI warns users to use an isolated target; stateful comparisons may be contaminated.
+- LLM proposals are validated for bounded JSON, operation, category, candidate structure, and declared parameters. Request-body compatibility is not yet a complete JSON Schema validation implementation.
+- No controlled fixture experiment or authenticated browser walkthrough was run for this feature.

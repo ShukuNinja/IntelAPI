@@ -435,6 +435,91 @@ tbody tr:hover { background: #171f2d; }
   font-size: 12px;
 }
 
+.experiment-approaches {
+  display: grid;
+  gap: 8px;
+  margin: 8px 0;
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.experiment-approaches legend {
+  padding: 0 5px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.experiment-history-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 9px;
+  background: var(--surface, #fff);
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.experiment-history-item > span:first-child,
+.experiment-run-card > div {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.experiment-history-item small,
+.experiment-run-card small {
+  display: block;
+  flex-basis: 100%;
+  color: var(--text-muted, #697386);
+  font-size: 12px;
+}
+
+.experiment-history-item--active {
+  border-color: var(--accent, #5d62e8);
+  background: var(--surface-muted, #f6f7f9);
+}
+
+.experiment-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.experiment-run-card {
+  padding: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.experiment-run-card p {
+  margin: 8px 0;
+  color: var(--text-muted, #697386);
+  font-size: 13px;
+}
+
+.experiment-run-card .experiment-warning {
+  margin-top: 8px;
+  color: var(--warning, #986600);
+}
+
+.metric-reason {
+  display: block;
+  max-width: 280px;
+  margin-top: 4px;
+  color: var(--text-muted, #697386);
+  font-size: 11px;
+  white-space: normal;
+}
+
 @media (max-width: 640px) {
   .campaign-case > summary { flex-wrap: wrap; gap: 8px 12px; }
   .campaign-case__heading { flex-basis: calc(100% - 20px); }

@@ -148,7 +148,9 @@ def _operation_case_values(operation: NormalizedOperation, candidate: Any) -> di
             continue
         if name == omitted_name:
             continue
-        if parameter.get("required") or location == "path":
+        if name in candidate.parameters:
+            values[location][name] = candidate.parameters[name]
+        elif parameter.get("required") or location == "path":
             values[location][name] = _parameter_example(parameter)
     if any(
         "{" + name + "}" in operation.path

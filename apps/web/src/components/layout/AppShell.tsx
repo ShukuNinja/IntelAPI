@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import {
   Activity,
+  BarChart3,
   Boxes,
   ChevronDown,
   CircleHelp,
@@ -35,6 +36,7 @@ const primary: NavItem[] = [
   { label: 'Health Checks', to: '/health', icon: Activity },
   { label: 'API Explorer', to: '/explorer', icon: FileSearch2 },
   { label: 'Test Campaigns', to: '/campaigns', icon: FlaskConical },
+  { label: 'Experimental Workbench', to: '/experiments', icon: BarChart3 },
   { label: 'Findings & Evidence', to: '/findings', icon: ShieldCheck },
   { label: 'Projects', to: '/projects', icon: FolderKanban },
 ]

@@ -173,6 +173,22 @@ Health-check run history uses `executions` plus `assertion_results`; do not add 
 - Index `(project_id, finding_id)`, `(execution_id)`.
 - At least one source FK must be non-null. Enforce with a database check constraint where practical and validate in the service layer. Excerpts must be bounded and redacted.
 
+### 2.6 Experimental workbench
+
+#### `experiments`
+- `id UUID PK`, `project_id UUID NOT NULL FK projects.id ON DELETE RESTRICT`, `created_by_user_id UUID NOT NULL FK users.id ON DELETE RESTRICT`
+- `specification_id UUID NOT NULL FK api_specifications.id ON DELETE RESTRICT`
+- `name VARCHAR(160) NOT NULL`, `configuration JSONB NOT NULL` — redacted shared configuration, operation IDs, specification hash, budgets, category selection, assertion and deduplication policy versions.
+- `created_at`, `updated_at`; index `(project_id, created_at DESC)`.
+- Every experiment must use operations from one immutable specification version. Ownership and consistency are enforced in the API service.
+
+#### `experiment_runs`
+- `id UUID PK`, `experiment_id UUID NOT NULL FK experiments.id ON DELETE CASCADE`, `campaign_id UUID NOT NULL UNIQUE FK campaigns.id ON DELETE RESTRICT`
+- `approach VARCHAR(32) NOT NULL` — one of `llm_baseline`, `semantic_assisted`, `feedback_guided`, or `evidence_backed`.
+- `configuration JSONB NOT NULL`, `generation_metadata JSONB NOT NULL` — per-approach settings, policy/prompt versions, fallback state, bounded counts, and semantic context count. Provider credentials are never stored.
+- `created_at TIMESTAMPTZ NOT NULL`; unique `(experiment_id, approach)`; index `(experiment_id, created_at)`.
+- Campaigns remain the source of truth for test cases, executions, findings, and append-only selection/execution events. Comparison metrics are derived from those records; unsupported measures return `N/A` with a reason.
+
 ## 3. Relationship and deletion policy
 
 - `users → projects`: restrict hard deletion while project history exists; account deletion is out of MVP scope.
@@ -183,13 +199,15 @@ Health-check run history uses `executions` plus `assertion_results`; do not add 
 
 ## 4. Migration order
 
-The current baseline has `0001_initial` as an effectively empty head. Inspect `alembic history`, `alembic heads`, and `alembic current` before writing revisions. Do not rename or rewrite applied revisions.
+The checked-in chain currently runs from the effectively empty `0001_initial` revision through `0007_findings_evidence`. Inspect `alembic history`, `alembic heads`, and `alembic current` before writing further revisions. Do not rename or rewrite applied revisions.
 
-1. `0002_identity_projects.py`: `users`, `sessions`, `projects`; core UUID/timestamp conventions and indexes.
-2. `0003_workspace_assets.py`: `collections`, `saved_requests`, `environments`, `environment_variables`.
-3. `0004_execution_api_understanding.py`: `executions`, `assertion_results`, `api_specifications`, `api_operations`, `knowledge_facts`, `health_checks`; add any deferred nullable FKs after their target tables exist.
-4. `0005_testing_campaigns.py`: `campaigns`, `campaign_jobs`, `test_cases`, `campaign_events`; add execution-to-campaign/test-case FKs only after those tables exist. Within one migration, create tables in dependency order or add FKs after table creation.
-5. `0006_findings_evidence.py`: `findings`, `evidence_references`; add deferred cross-links and check constraints.
+1. `0002_identity_projects.py`: users, sessions, and projects.
+2. `0003_workspace_assets.py`: collections, saved requests, environments, and environment variables.
+3. `0004_execution_evidence.py`: execution records and bounded request/response evidence.
+4. `0005_api_understanding_health.py`: specifications, normalized operations, extracted facts, health checks, and assertion results.
+5. `0006_testing_campaigns.py`: campaigns, jobs, cases, events, and execution links.
+6. `0007_findings_evidence.py`: findings and evidence references.
+7. `0008_experimental_workbench.py`: experiments and approach runs; these reference existing specifications and campaigns and do not duplicate execution or evidence records.
 
 These are logical groups, not immutable filenames. If the actual revision graph or FK cycle requires splitting a group, Developer A may create additional sequential revisions while preserving this dependency order and updating this document in the same PR. Never create multiple heads for convenience.
 

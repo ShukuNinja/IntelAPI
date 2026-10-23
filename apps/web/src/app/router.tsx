@@ -2,6 +2,7 @@ import { ProjectsPage } from '../features/projects/ProjectsPage'
 import { Navigate, createBrowserRouter } from 'react-router-dom'
 import { AppShell } from '../components/layout/AppShell'
 import { CampaignsPage } from '../features/campaigns/CampaignsPage'
+import { ExperimentWorkbenchPage } from '../features/experiments/ExperimentWorkbenchPage'
 import { ExplorerPage } from '../features/explorer/ExplorerPage'
 import { FindingsPage } from '../features/findings/FindingsPage'
 import { HealthChecksPage } from '../features/health/HealthChecksPage'
@@ -52,6 +53,7 @@ export const router = createBrowserRouter([
       { path: 'health', element: <HealthChecksPage /> },
       { path: 'explorer', element: <ExplorerPage /> },
       { path: 'campaigns', element: <CampaignsPage /> },
+      { path: 'experiments', element: <ExperimentWorkbenchPage /> },
       { path: 'findings', element: <FindingsPage /> },
       { path: 'collections', element: <CollectionsPage /> },
       { path: 'environments', element: <EnvironmentsPage /> },

@@ -9,6 +9,7 @@ from app.api.executions.persisted_router import (
     router as persisted_executions_router,
 )
 from app.api.executions.router import router as executions_router
+from app.api.experiments.router import router as experiments_router
 from app.api.findings.router import router as findings_router
 from app.api.health_checks.router import router as health_checks_router
 from app.api.projects.router import router as projects_router
@@ -76,6 +77,11 @@ protected_router.include_router(
 protected_router.include_router(
     campaigns_router,
     tags=["campaigns"],
+)
+
+protected_router.include_router(
+    experiments_router,
+    tags=["experiments"],
 )
 
 protected_router.include_router(

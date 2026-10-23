@@ -1,10 +1,10 @@
 """NVIDIA Build adapter using the OpenAI-compatible Python SDK."""
 
+import logging
 from typing import Any
 
 from app.integrations.llm.models import LLMRequest, LLMResponse
 from app.integrations.llm.provider import LLMProviderError
-import logging
 
 logger = logging.getLogger(__name__)
 NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1"
@@ -34,11 +34,11 @@ class NVIDIAProvider:
                 raise LLMProviderError("The OpenAI-compatible SDK is not installed.") from exc
 
             client = OpenAI(
-    base_url=NVIDIA_BASE_URL,
-    api_key=api_key,
-    timeout=30.0,
-    max_retries=1,
-)
+                base_url=NVIDIA_BASE_URL,
+                api_key=api_key,
+                timeout=30.0,
+                max_retries=1,
+            )
 
         self._client = client
 
@@ -81,6 +81,4 @@ class NVIDIAProvider:
                 "NVIDIA generation failed: exception_type=%s",
                 type(exc).__name__,
             )
-            raise LLMProviderError(
-                "The NVIDIA provider could not complete the request."
-            ) from exc
+            raise LLMProviderError("The NVIDIA provider could not complete the request.") from exc
