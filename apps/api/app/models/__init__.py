@@ -7,6 +7,7 @@ from app.models.campaign import (
 )
 from app.models.execution import ExecutionRecord
 from app.models.execution_report import ExecutionReportRecord
+from app.models.experiment import ExperimentRunRecord
 from app.models.finding_triage import FindingTriageRecord
 from app.models.generation_report import GenerationReportRecord
 from app.models.health_check import HealthCheckRecord
@@ -19,6 +20,7 @@ __all__ = [
     "ApiSpecification",
     "ExecutionRecord",
     "ExecutionReportRecord",
+    "ExperimentRunRecord",
     "FindingTriageRecord",
     "HealthCheckRecord",
     "AssertionResultRecord",

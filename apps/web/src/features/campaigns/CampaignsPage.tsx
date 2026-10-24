@@ -2,12 +2,12 @@ import { useCallback, useEffect, useState } from 'react'
 import { Activity, Ban, FileSearch2, Play, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { apiRequest } from '../../lib/apiClient'
+import { useProjectWorkspace } from '../projects/ProjectWorkspaceContext'
 import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { PageHeader } from '../../components/ui/PageHeader'
 import { Panel } from '../../components/ui/Panel'
 
-type Project = { id: string; name: string }
 type Environment = { id: string; name: string }
 type GenerationReport = { id: string; specification_id: string; candidate_count: number; operation_count: number; created_at: string }
 type GenerationReportDetail = { endpoints: Array<{ operation: { id: string; method: string; path: string; summary?: string }; candidate_count: number }> }
@@ -20,8 +20,7 @@ type CampaignReport = { campaign: Campaign; summary: Campaign['progress']; tests
 type CampaignEvent = { id: string; sequence_number: number; event_type: string; payload: Record<string, unknown>; created_at: string }
 
 export function CampaignsPage() {
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
+  const { projects, activeProjectId: projectId, setActiveProjectId } = useProjectWorkspace()
   const [reports, setReports] = useState<GenerationReport[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
   const [reportDetail, setReportDetail] = useState<GenerationReportDetail | null>(null)
@@ -39,6 +38,12 @@ export function CampaignsPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
+  useEffect(() => {
+    setSelectedId(''); setReport(null); setEvents([]); setReportDetail(null)
+    setGenerationReportId(''); setEnvironmentId(''); setError('')
+    setBaseline('{}'); setBaseUrl('')
+  }, [projectId])
+
   const refreshCampaigns = useCallback(async (id: string) => {
     if (!id) { setCampaigns([]); return }
     const items = await apiRequest<Campaign[]>(`/v1/projects/${id}/campaigns`)
@@ -55,13 +60,6 @@ export function CampaignsPage() {
     setReport(nextReport)
     setEvents(nextEvents)
   }, [projectId])
-
-  useEffect(() => {
-    void apiRequest<Project[]>('/v1/projects').then(items => {
-      setProjects(items)
-      if (items[0]) setProjectId(items[0].id)
-    }).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load projects.'))
-  }, [])
 
   useEffect(() => {
     if (!projectId) { setReports([]); setCampaigns([]); return }
@@ -130,7 +128,7 @@ export function CampaignsPage() {
     <PageHeader eyebrow="TEST CAMPAIGNS" title="Campaigns" description="Queue bounded contract tests, follow durable progress, and review request outcomes." actions={<Button onClick={() => { if (projectId) void refreshCampaigns(projectId) }}><RefreshCw size={15} /> Refresh</Button>} />
     <Panel title="Create a campaign" subtitle="Campaigns run from saved candidate reports through the same outbound request security controls.">
       <div className="grid gap-3 p-4 md:grid-cols-2">
-        <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => { setProjectId(event.target.value); setSelectedId(''); setReport(null); setGenerationReportId(''); setEnvironmentId('') }}><option value="">Select a project…</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+        <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => { setActiveProjectId(event.target.value); setSelectedId(''); setReport(null); setEvents([]); setReportDetail(null); setGenerationReportId(''); setEnvironmentId('') }}><option value="">Select a project…</option>{projects.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
         <label className="text-xs text-slate-300">Generation report<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={generationReportId} onChange={event => setGenerationReportId(event.target.value)}><option value="">Select a report…</option>{reports.map(item => <option key={item.id} value={item.id}>{item.candidate_count} candidates · {item.operation_count} operations · {new Date(item.created_at).toLocaleString()}</option>)}</select></label>
         <label className="text-xs text-slate-300">Campaign name<input className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={name} onChange={event => setName(event.target.value)} /></label>
         <label className="text-xs text-slate-300">Target base URL<input className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.example.com" /></label>

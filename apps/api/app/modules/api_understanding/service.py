@@ -74,11 +74,14 @@ def parse_specification(document: Any) -> dict[str, Any]:
                     "summary": operation.get("summary", ""),
                     "description": operation.get("description", ""),
                     "tags": operation.get("tags", []),
-                    "parameters": _merge_parameters(
-                        path_item.get("parameters", []), operation.get("parameters", [])
+                    "parameters": _resolve_local_refs(
+                        _merge_parameters(
+                            path_item.get("parameters", []), operation.get("parameters", [])
+                        ),
+                        document,
                     ),
-                    "request_body": operation.get("requestBody", {}),
-                    "responses": operation.get("responses", {}),
+                    "request_body": _resolve_local_refs(operation.get("requestBody", {}), document),
+                    "responses": _resolve_local_refs(operation.get("responses", {}), document),
                 }
             )
     return {
@@ -86,7 +89,38 @@ def parse_specification(document: Any) -> dict[str, Any]:
             "title": document["info"].get("title", "Untitled API"),
             "version": version,
         },
+        "servers": document.get("servers", []) if isinstance(document.get("servers"), list) else [],
         "operations": operations,
+    }
+
+
+def _resolve_local_refs(
+    value: Any,
+    document: dict[str, Any],
+    depth: int = 0,
+    seen: frozenset[str] = frozenset(),
+) -> Any:
+    """Inline bounded local JSON pointers; never performs network access for refs."""
+    if depth > 20:
+        return value
+    if isinstance(value, list):
+        return [_resolve_local_refs(item, document, depth + 1, seen) for item in value]
+    if not isinstance(value, dict):
+        return value
+    reference = value.get("$ref")
+    if isinstance(reference, str) and reference.startswith("#/") and reference not in seen:
+        target: Any = document
+        try:
+            for segment in reference[2:].split("/"):
+                token = segment.replace("~1", "/").replace("~0", "~")
+                target = target[token]
+        except (KeyError, TypeError):
+            target = None
+        if isinstance(target, dict):
+            merged = {**target, **{key: item for key, item in value.items() if key != "$ref"}}
+            return _resolve_local_refs(merged, document, depth + 1, seen | {reference})
+    return {
+        key: _resolve_local_refs(item, document, depth + 1, seen) for key, item in value.items()
     }
 
 
@@ -340,6 +374,49 @@ def generate_candidates(operation: dict[str, Any], limit: int = 20) -> list[dict
                         scope,
                     )
                 )
+    if isinstance(properties, dict):
+        for name, property_schema in properties.items():
+            if not isinstance(property_schema, dict):
+                continue
+            if isinstance(property_schema.get("enum"), list) and property_schema["enum"]:
+                candidates.append(
+                    _candidate(
+                        "body-enum-boundary",
+                        f"Probe a value outside the declared enum for body property '{name}'.",
+                        {name: _enum_sentinel(property_schema["enum"])},
+                        scope,
+                    )
+                )
+            elif property_schema.get("type") == "integer" and isinstance(
+                property_schema.get("minimum"), (int, float)
+            ):
+                candidates.append(
+                    _candidate(
+                        "body-minimum-boundary",
+                        f"Probe one below the declared minimum for body property '{name}'.",
+                        {name: property_schema["minimum"] - 1},
+                        scope,
+                    )
+                )
+            elif property_schema.get("type") == "string" and isinstance(
+                property_schema.get("maxLength"), int
+            ):
+                candidates.append(
+                    _candidate(
+                        "body-length-boundary",
+                        f"Probe one character above maxLength for body property '{name}'.",
+                        {name: "x" * min(property_schema["maxLength"] + 1, 4097)},
+                        scope,
+                    )
+                )
+    candidates.append(
+        _candidate(
+            "positive-baseline",
+            "Execute the user-supplied valid baseline request without a contract mutation.",
+            {},
+            scope,
+        )
+    )
     return candidates[:limit]
 
 

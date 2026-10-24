@@ -1,5 +1,32 @@
 # Build status
 
+## Research prototype delivery update — 2026-10-24
+
+The following records the later implementation pass on `final-version`; it supersedes older checklist statements below wherever they conflict. The historical records are retained for context.
+
+- [x] Deterministic semantic experiment backend with persisted runs, explainable candidate selection, metrics, run retrieval, comparison, and JSON/Markdown export.
+- [x] Local seeded Widget API fixture with a controlled response-schema defect; experiment execution uses the shared bounded outbound executor.
+- [x] Research Workbench UI for project/spec selection and creation, fixture import, both approaches, execution budgets, results, semantic facts, history, and comparison export.
+- [x] Project lifecycle and aggregate overview API; functional Collections and Environments management pages.
+- [x] App-wide create/switch project flow synchronized across project-scoped pages; active selection persists across reloads and scoped results reset on switch.
+- [x] Imported OpenAPI server base URL is available to Workbench with credential/query/fragment stripping; operation baseline keys are visible.
+- [x] CI branch triggers include `final-version`.
+- [x] Verification: backend 73 passed (3 warnings); Ruff, Python compileall, frontend typecheck/lint/build, and `git diff --check` passed. Compose API/worker/web/PostgreSQL ran; migration head is `0014_experiment_runs`.
+- [x] Interactive browser smoke: both approaches executed against the localhost seeded fixture; after page reload, both saved runs were visible and selectable from history with metrics/outcomes restored.
+- [ ] Strict mypy has existing repository typing failures.
+- [ ] Authentication/session ownership, first-class immutable findings/evidence, PostgreSQL campaign crash/concurrency proofs, and browser E2E coverage remain production/release work.
+
+The prototype is local-only and deterministic; the seeded result is a controlled functional check, not a general benchmark-quality claim.
+
+## Responsive navigation update — 2026-10-24
+
+- [x] Sidebar remains a labeled navigation on desktop, collapses to an icon rail on tablet widths, and becomes a horizontally scrollable bottom bar on phone widths.
+- [x] Navigation shows a styled cursor-following label on hover and keyboard focus at all widths; collapsed links retain accessible names.
+- [x] Workbench import controls wrap on narrow screens, and long project names truncate in the header.
+- [x] Verified at 400px and 768px browser widths; mobile document width stayed within the viewport. Frontend typecheck, lint, and production build passed.
+
+Live run IDs: contract baseline `97e4e5fe-7581-40dc-8d00-ef8c4cde255c`; semantic guided `9392a6bb-3730-47ee-8729-4d45be59f797`. Both reported one seeded defect detected from three selected candidates on the single-operation fixture. Each also produced one inconclusive required-parameter omission and one expected boundary rejection. This confirms the pipeline and persistence path only; it does not establish comparative statistical performance.
+
 Status checked 2026-10-24. This is an operational checklist; a checked item requires code and a passing check.
 
 ## Implemented and verified in this workspace

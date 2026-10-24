@@ -7,12 +7,12 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { MethodBadge } from '../../components/ui/MethodBadge'
 import { apiDownload, apiRequest } from '../../lib/apiClient'
+import { useProjectWorkspace } from '../projects/ProjectWorkspaceContext'
 
 type Operation = { id: string; method: string; path: string; summary: string; description: string; tags: string[]; parameters: unknown[]; request_body: Record<string, unknown> }
 type ParsedSpec = { specification: { title: string; version: string }; operations: Operation[] }
 type Candidate = { id: string; kind: string; reason: string; mutation: Record<string, unknown>; validation_status: string }
 type GenerationReport = { id: string; project_id: string; specification_id: string; created_at: string; policy_version: string; specification: { title: string; version: string; content_hash: string }; summary: { operation_count: number; candidate_count: number; endpoints_with_candidates: number; truncated: boolean }; endpoints: { operation: Operation; candidate_count: number; candidates: Candidate[] }[] }
-type Project = { id: string; name: string; description: string | null }
 type SavedSpecification = { id: string; title: string; version: string; content_hash: string; created_at: string; operation_count: number }
 type SavedSpecificationDetail = { id: string; title: string; version: string; source_format: 'json' | 'yaml'; source_url: string | null; document: Record<string, unknown>; operations: Operation[] }
 type SavedReport = { id: string; specification_id: string; policy_version: string; candidate_count: number; operation_count: number; created_at: string }
@@ -22,6 +22,7 @@ type DiscoveryResult = { classification: string; attempts: { url: string; status
 type Readiness = { analysis_version: string; scope: string; summary: { operation_count: number; finding_count: number; high_count: number; medium_count: number; low_count: number; operations_needing_attention: number }; findings: { code: string; severity: string; message: string; evidence: { json_pointer: string }; operation_id?: string }[]; limitations: string[] }
 
 export function ExplorerPage() {
+  const { projects, activeProjectId: projectId, setActiveProjectId: setProjectId, createProject: createWorkspaceProject } = useProjectWorkspace()
   const [searchParams] = useSearchParams()
   const [source, setSource] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
@@ -45,8 +46,6 @@ export function ExplorerPage() {
   const [persistedSpecId, setPersistedSpecId] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [projects, setProjects] = useState<Project[]>([])
-  const [projectId, setProjectId] = useState('')
   const [projectName, setProjectName] = useState('')
   const [savedSpecs, setSavedSpecs] = useState<SavedSpecification[]>([])
   const [savedReports, setSavedReports] = useState<SavedReport[]>([])
@@ -56,12 +55,16 @@ export function ExplorerPage() {
   const visible = useMemo(() => parsed?.operations.filter(op => `${op.method} ${op.path} ${op.summary} ${op.tags.join(' ')}`.toLowerCase().includes(filter.toLowerCase())) ?? [], [parsed, filter])
 
   useEffect(() => {
-    void apiRequest<Project[]>('/v1/projects').then(items => {
-      setProjects(items)
-      const requestedProject = searchParams.get('project')
-      setProjectId(items.find(project => project.id === requestedProject)?.id ?? items[0]?.id ?? '')
-    }).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load projects.'))
-  }, [searchParams])
+    setPersistedSpecId(''); setReport(null); setCandidates([]); setCandidateExecution(null)
+    setReadiness(null); setSelected(null); setParsed(null); setError('')
+  }, [projectId])
+
+  useEffect(() => {
+    const requestedProject = searchParams.get('project')
+    if (requestedProject && projects.some(project => project.id === requestedProject) && requestedProject !== projectId) {
+      setProjectId(requestedProject)
+    }
+  }, [searchParams, projects, projectId, setProjectId])
 
   useEffect(() => {
     if (!projectId) { setSavedSpecs([]); setSavedReports([]); return }
@@ -76,8 +79,8 @@ export function ExplorerPage() {
     if (!projectName.trim()) return
     setBusy(true); setError('')
     try {
-      const project = await apiRequest<Project>('/v1/projects', { method: 'POST', body: JSON.stringify({ name: projectName.trim() }) })
-      setProjects(current => [...current, project]); setProjectId(project.id); setProjectName('')
+      await createWorkspaceProject(projectName)
+      setProjectName('')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Unable to create project.') }
     finally { setBusy(false) }
   }
@@ -230,7 +233,7 @@ export function ExplorerPage() {
     <PageHeader eyebrow="API UNDERSTANDING" title="API Explorer" description="Import an OpenAPI or Swagger document and inspect normalized operations and deterministic candidate ideas." />
     <Panel title="Project workspace" subtitle="Projects and imported API specifications are stored in the configured database.">
       <div className="flex flex-wrap items-end gap-3 p-4">
-        <label className="min-w-56 flex-1 text-xs text-slate-300">Active project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" value={projectId} onChange={event => { setProjectId(event.target.value); setPersistedSpecId(''); setReport(null) }}><option value="">Choose a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label className="min-w-56 flex-1 text-xs text-slate-300">Active project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" value={projectId} onChange={event => { setProjectId(event.target.value); setPersistedSpecId(''); setReport(null); setCandidates([]); setCandidateExecution(null); setReadiness(null); setSelected(null); setParsed(null) }}><option value="">Choose a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <label className="min-w-48 flex-1 text-xs text-slate-300">New project<input className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100" value={projectName} onChange={event => setProjectName(event.target.value)} placeholder="e.g. Payments API" /></label>
         <Button variant="secondary" onClick={() => void createProject()} disabled={busy || !projectName.trim()}><FolderPlus size={15} />Create project</Button>
       </div>

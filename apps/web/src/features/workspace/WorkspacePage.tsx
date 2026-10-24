@@ -5,8 +5,8 @@ import { Button } from '../../components/ui/Button'
 import { Badge } from '../../components/ui/Badge'
 import { Panel } from '../../components/ui/Panel'
 import { apiRequest } from '../../lib/apiClient'
+import { useProjectWorkspace } from '../projects/ProjectWorkspaceContext'
 
-type Project = { id: string; name: string; description: string | null }
 type Collection = { id: string; name: string }
 type SavedRequest = { id: string; name: string; collection_id: string | null; collection_name: string | null; method: string; url: string; headers: Record<string, string>; body: string | null }
 type Environment = { id: string; name: string; base_url: string | null; variables: Record<string, string>; secrets: Record<string, { has_value: boolean }> }
@@ -23,12 +23,11 @@ type HistoryEntry = {
 }
 
 export function WorkspacePage() {
+  const { projects, activeProjectId: projectId, setActiveProjectId } = useProjectWorkspace()
   const [method, setMethod] = useState('GET')
   const [url, setUrl] = useState('')
   const [headersText, setHeadersText] = useState('{\n  "Accept": "application/json"\n}')
   const [body, setBody] = useState('')
-  const [projectId, setProjectId] = useState('')
-  const [projects, setProjects] = useState<Project[]>([])
   const [savedRequests, setSavedRequests] = useState<SavedRequest[]>([])
   const [collections, setCollections] = useState<Collection[]>([])
   const [environments, setEnvironments] = useState<Environment[]>([])
@@ -54,18 +53,14 @@ export function WorkspacePage() {
   }
 
   useEffect(() => {
-    void apiRequest<Project[]>('/v1/projects').then(items => {
-      setProjects(items)
-      if (items[0]) setProjectId(items[0].id)
-    }).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load projects.'))
-  }, [])
-
-  useEffect(() => {
     void refreshHistory(projectId).catch(cause => setError(cause instanceof Error ? cause.message : 'Unable to load request history.'))
   }, [projectId])
 
   useEffect(() => {
+    setUrl(''); setBody(''); setRequestName(''); setCollectionId(''); setSelectedRequestId('')
+    setResponse(null); setError('')
     if (!projectId) { setSavedRequests([]); setCollections([]); setEnvironments([]); setSelectedEnvironmentId(''); return }
+    setSelectedRequestId(''); setSelectedEnvironmentId(''); setResponse(null); setError('')
     void Promise.all([
       apiRequest<SavedRequest[]>(`/v1/projects/${projectId}/saved-requests`),
       apiRequest<Collection[]>(`/v1/projects/${projectId}/collections`),
@@ -144,7 +139,7 @@ export function WorkspacePage() {
 
   async function sendRequest() {
     setError(''); setResponse(null)
-    if (!projectId) { setError('Create or select a project in API Explorer before sending requests.'); return }
+    if (!projectId) { setError('Create or select a project from the app-wide project selector before sending requests.'); return }
     let headers: Record<string, string>
     try {
       headers = JSON.parse(headersText) as Record<string, string>
@@ -168,7 +163,7 @@ export function WorkspacePage() {
       actions={<Button variant="primary" onClick={() => void sendRequest()} disabled={busy || !url.trim()}><Send size={15} />{busy ? 'Sending…' : 'Send request'}</Button>} />
     <Panel title="Request" subtitle="Requests are sent by the backend with timeout, response-size, redirect, and target-network controls.">
       <div className="grid gap-4 p-4">
-        <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => setProjectId(event.target.value)}><option value="">Select a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
+        <label className="text-xs text-slate-300">Project<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={projectId} onChange={event => setActiveProjectId(event.target.value)}><option value="">Select a project…</option>{projects.map(project => <option key={project.id} value={project.id}>{project.name}</option>)}</select></label>
         <div className="grid gap-3 rounded-lg border border-slate-800 bg-slate-950/50 p-3 md:grid-cols-[1fr_1fr_auto]"><label className="text-xs text-slate-300">Saved request<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedRequestId} onChange={event => applySavedRequest(event.target.value)}><option value="">New request…</option>{savedRequests.map(item => <option key={item.id} value={item.id}>{item.collection_name ? `${item.collection_name} / ` : ''}${item.name}</option>)}</select></label><label className="text-xs text-slate-300">Environment<select className="mt-1 block w-full rounded border border-slate-700 bg-slate-900 px-3 py-2 text-sm" value={selectedEnvironmentId} onChange={event => setSelectedEnvironmentId(event.target.value)}><option value="">No environment</option>{environments.map(item => <option key={item.id} value={item.id}>{item.name}{Object.keys(item.secrets ?? {}).length ? ` · ${Object.keys(item.secrets).length} secret(s)` : ''}</option>)}</select></label><div className="flex items-end"><Button size="sm" onClick={() => { setShowEnvironmentForm(value => !value); setError('') }}>{showEnvironmentForm ? 'Close' : 'New environment'}</Button></div>
           <div className="grid gap-2 md:col-span-3 md:grid-cols-[1fr_1fr_auto]"><input aria-label="Saved request name" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={requestName} onChange={event => setRequestName(event.target.value)} placeholder="Request name"/><select aria-label="Request collection" className="rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={collectionId} onChange={event => setCollectionId(event.target.value)}><option value="">No collection</option>{collections.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><Button size="sm" onClick={() => void saveRequest()}>{selectedRequestId ? 'Update saved request' : 'Save request'}</Button></div>
           <div className="flex gap-2 md:col-span-3"><input aria-label="New collection name" className="flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 text-xs" value={newCollectionName} onChange={event => setNewCollectionName(event.target.value)} placeholder="New collection name"/><Button size="sm" onClick={() => void createCollection()}>Create collection</Button></div>

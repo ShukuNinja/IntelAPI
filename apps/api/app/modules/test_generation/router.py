@@ -251,7 +251,7 @@ async def execute_candidate(
             if not isinstance(body, dict) or name not in body:
                 raise ValueError(f"Provide a baseline JSON body containing '{name}'.")
             body.pop(name)
-        else:
+        elif mutation:
             name, value = next(iter(mutation.items()))
             parameter = next(
                 (item for item in operation.get("parameters", []) if item.get("name") == name),

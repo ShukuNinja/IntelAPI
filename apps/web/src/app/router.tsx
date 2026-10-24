@@ -7,6 +7,8 @@ import { ExplorerPage } from '../features/explorer/ExplorerPage'
 import { CampaignsPage } from '../features/campaigns/CampaignsPage'
 import { FindingsPage } from '../features/findings/FindingsPage'
 import { SimplePage } from '../features/misc/SimplePage'
+import { WorkbenchPage } from '../features/experiments/WorkbenchPage'
+import { ResourceManagementPage } from '../features/misc/ResourceManagementPage'
 
 export const router = createBrowserRouter([
   {
@@ -19,8 +21,9 @@ export const router = createBrowserRouter([
       { path: 'explorer', element: <ExplorerPage /> },
       { path: 'campaigns', element: <CampaignsPage /> },
       { path: 'findings', element: <FindingsPage /> },
-      { path: 'collections', element: <SimplePage kind="collections" /> },
-      { path: 'environments', element: <SimplePage kind="environments" /> },
+      { path: 'workbench', element: <WorkbenchPage /> },
+      { path: 'collections', element: <ResourceManagementPage kind="collections" /> },
+      { path: 'environments', element: <ResourceManagementPage kind="environments" /> },
       { path: 'history', element: <SimplePage kind="history" /> },
       { path: 'settings', element: <SimplePage kind="settings" /> },
       { path: '*', element: <Navigate to="/" replace /> },

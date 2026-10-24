@@ -86,6 +86,21 @@ The Compose `worker` service processes queued campaigns. It shares the API image
 
 ## 4.1 Demo path
 
+### Research workbench (local deterministic experiment)
+
+The workbench compares two offline, reproducible candidate-selection approaches against the same imported API contract. It does not require an LLM key. The optional seeded target is served by the API itself and is only intended for local experimentation.
+
+1. Open **Experimental Workbench** from the navigation or visit `http://localhost:5173/workbench`.
+2. Create/select a project, then use **Load local seeded benchmark** and **Import specification** to add the small Widget API contract.
+3. Keep the target base URL at `http://localhost:8000/api/v1/research-benchmark`. The fixture includes a controlled response type defect for widget `13`; the other responses are the baseline controls.
+4. Run both candidate-generation approaches. Review their selected candidates, selection rationale, semantic facts, and coverage metrics.
+5. Execute both with the same bounded execution budget. Compare detection metrics and individual outcomes. Generation is offline; HTTP requests happen only after the explicit execution action.
+6. Reload each saved run from **History** to confirm persistence, then export the comparison as JSON or Markdown.
+
+The backend stores experiment configurations and results, but redacts parameter/header values from stored configuration. Do not use real secrets or production targets in this prototype. The experiment comparison describes results for the selected contract and budget; it is not a general performance claim.
+
+### Existing API workflow
+
 1. Open **API Explorer**, create a project, and import a small OpenAPI JSON/YAML file or paste a document.
 2. Generate a candidate report and confirm the endpoints and candidate ideas are visible.
 3. Open **Campaigns**, choose the project and report, enter a reachable target base URL, and set a small execution budget.
@@ -104,7 +119,7 @@ docker compose exec api alembic current
 docker compose exec api pytest -q
 ```
 
-Current limitations: live PostgreSQL/worker runtime, Google authentication, campaign finding classification, and full end-to-end browser flows still need verification/implementation. The environment key must remain stable across restarts or stored secrets cannot be decrypted.
+Current limitations: Google authentication and production multi-user authorization are not implemented; first-class evidence records and full end-to-end browser acceptance tests remain open. The research benchmark is a controlled localhost fixture, not a general-purpose benchmark. The environment key must remain stable across restarts or stored secrets cannot be decrypted.
 
 These are baseline smoke checks, not acceptance tests for the full product.
 
