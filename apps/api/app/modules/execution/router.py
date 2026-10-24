@@ -17,10 +17,23 @@ from app.core.secret_storage import (
 from app.db.session import get_db
 from app.models import Environment, Project, User
 from app.models.execution import ExecutionRecord
-from app.modules.execution.service import ExecutionError, execute_request
+from app.modules.execution.service import (
+    ExecutionError,
+    execute_request,
+    resolve_and_validate,
+    validate_url_syntax,
+)
 from app.modules.projects.router import LOCAL_USER_SUB
 
 router = APIRouter(prefix="/projects/{project_id}/executions", tags=["execution"])
+
+SSRF_DEMO_TARGETS = [
+    ("Loopback development exception", "http://127.0.0.1/"),
+    ("Private network address", "http://10.0.0.8/"),
+    ("Link-local metadata address", "http://169.254.169.254/latest/meta-data/"),
+    ("Reserved documentation address", "http://192.0.2.1/"),
+    ("Public address control", "http://8.8.8.8/"),
+]
 
 
 class ExecuteRequest(BaseModel):
@@ -30,6 +43,49 @@ class ExecuteRequest(BaseModel):
     body: str | None = Field(default=None, max_length=1_000_000)
     confirm_unsafe: bool = False
     environment_id: UUID | None = None
+
+
+@router.get("/ssrf-demo")
+async def run_ssrf_policy_demo(
+    project_id: UUID,
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, Any]:
+    """Preflight fixed demonstration addresses without making any HTTP requests."""
+    _owned_project(db, project_id)
+    cases = []
+    for name, target_url in SSRF_DEMO_TARGETS:
+        hostname, _ = validate_url_syntax(target_url)
+        try:
+            await resolve_and_validate(hostname)
+        except ExecutionError as exc:
+            decision = "blocked_by_policy"
+            reason = str(exc)
+        else:
+            decision = "allowed_by_policy"
+            reason = (
+                "Loopback is allowed by the local-development setting. No HTTP request was sent."
+                if name == "Loopback development exception"
+                else "The destination passed the current address policy. No HTTP request was sent."
+            )
+        cases.append(
+            {
+                "name": name,
+                "target_url": target_url,
+                "protected_decision": decision,
+                "protected_reason": reason,
+                "without_protection_simulation": (
+                    "A vulnerable client would attempt this destination; the demo does not send it."
+                ),
+                "network_request_sent": False,
+            }
+        )
+    return {
+        "protection_active": True,
+        "local_targets_allowed": get_settings().allow_local_targets,
+        "private_network_targets_allowed": get_settings().allow_private_network_targets,
+        "network_requests_sent": 0,
+        "cases": cases,
+    }
 
 
 def _owned_project(db: Session, project_id: UUID) -> Project:

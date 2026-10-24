@@ -25,7 +25,7 @@ class ExecutionError(ValueError):
         self.outcome = outcome
 
 
-def _validate_url_syntax(url: str) -> tuple[str, str]:
+def validate_url_syntax(url: str) -> tuple[str, str]:
     try:
         parsed = urlsplit(url)
         port = parsed.port
@@ -102,7 +102,7 @@ async def execute_request(
     if len(headers) > 100:
         raise ExecutionError("A request can include at most 100 headers.")
 
-    hostname, origin = _validate_url_syntax(url)
+    hostname, origin = validate_url_syntax(url)
     addresses = await resolve_and_validate(hostname)
     parsed = urlsplit(url)
     port = parsed.port
