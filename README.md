@@ -38,6 +38,8 @@ The implementation-status document records what was verified, what remains missi
 
 ## Canonical documentation
 
+- [`docs/PROJECT_HANDOFF.md`](docs/PROJECT_HANDOFF.md) — complete as-built A-to-Z product, architecture, deterministic-engine, feature, metric, and terminology handoff.
+
 The following files are the authoritative development documentation. Read them before implementing or changing a feature.
 
 - [`docs/SOURCE_OF_TRUTH.md`](docs/SOURCE_OF_TRUTH.md) — product goals, user needs, business rules, architecture, module boundaries, and accepted technical decisions.

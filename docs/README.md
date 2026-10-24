@@ -7,6 +7,7 @@ This folder replaces the previous overlapping project documents. Keep these five
 
 | Document | Authority |
 |---|---|
+| [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md) | As-built product, architecture, deterministic engines, feature behavior, metrics, terminology, and known implementation limits |
 | [`SOURCE_OF_TRUTH.md`](SOURCE_OF_TRUTH.md) | Product needs, business rules, architecture, technical contracts, feature/module mapping, accepted decisions |
 | [`DATABASE_SCHEMA.md`](DATABASE_SCHEMA.md) | Frozen logical tables, fields, relationships, constraints, and migration dependency order |
 | [`IMPLEMENTATION_PLAN_AND_OWNERSHIP.md`](IMPLEMENTATION_PLAN_AND_OWNERSHIP.md) | Rigid two-developer split, file permissions, implementation order, PR gates, acceptance criteria |
@@ -15,11 +16,14 @@ This folder replaces the previous overlapping project documents. Keep these five
 
 ## Authority order
 
-1. `SOURCE_OF_TRUTH.md` governs product needs, business rules, architecture, and cross-cutting/API contracts.
-2. `DATABASE_SCHEMA.md` governs logical table shape, relationships, constraints, and migration dependency order.
-3. `IMPLEMENTATION_PLAN_AND_OWNERSHIP.md` governs ownership and workflow; it cannot silently change product/API/database decisions.
-4. `IMPLEMENTATION_STATUS.md` reports reality; it does not authorize scope changes.
-5. `LOCAL_RUNBOOK.md` explains commands for the current repo; it cannot override architecture or security rules.
+For a code handoff or claims about what is currently implemented, start with [`PROJECT_HANDOFF.md`](PROJECT_HANDOFF.md). It is an as-built guide and explicitly identifies where older target/design documents are aspirational or stale.
+
+1. `PROJECT_HANDOFF.md` describes current code behavior and limits. It does not silently amend accepted product decisions.
+2. `SOURCE_OF_TRUTH.md` governs product needs, business rules, architecture, technical contracts, and accepted decisions.
+3. `DATABASE_SCHEMA.md` governs logical table shape, relationships, constraints, and migration dependency order.
+4. `IMPLEMENTATION_PLAN_AND_OWNERSHIP.md` governs ownership and workflow; it cannot silently change product/API/database decisions.
+5. `IMPLEMENTATION_STATUS.md` reports reality; it does not authorize scope changes.
+6. `LOCAL_RUNBOOK.md` explains commands for the current repo; it cannot override architecture or security rules.
 
 If a decision changes, Developer A updates the source of truth and affected plan/status/runbook in the same PR or a coordinated documentation PR. Do not maintain alternate copies of these documents elsewhere.
 
